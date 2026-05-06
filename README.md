@@ -407,13 +407,13 @@ All tables support: batch selection (checkbox), inline edit mode, sort dialog, r
 
 | Service | Instance Name | Purpose |
 |---------|---------------|---------|
-| **Destination Service** | `mobileapptm-destination` | FSM API connectivity (outbound OAuth) |
+| **Destination Service** | `com.tng.fsm.timematerialext.app-destination` | FSM API connectivity (outbound OAuth) |
 
 ### Required Environment Variables:
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FSM_WEBCONTAINER_AUTH_KEY` | Yes — server refuses to start without it | Shared secret matching the FSM Web Container Authentication Key configured in FSM Admin. Used to validate inbound POSTs from FSM Mobile. Set via `cf set-env mobileapptm FSM_WEBCONTAINER_AUTH_KEY <value>` followed by `cf restage mobileapptm`. Recommended: 32+ chars from `openssl rand -base64 32`. |
+| `FSM_WEBCONTAINER_AUTH_KEY` | Yes — server refuses to start without it | Shared secret matching the FSM Web Container Authentication Key configured in FSM Admin. Used to validate inbound POSTs from FSM Mobile. Set via `cf set-env com.tng.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY <value>` followed by `cf restage com.tng.fsm.timematerialext.app`. Recommended: 32+ chars from `openssl rand -base64 32`. |
 | `FSM_JWKS_URL` | No (defaults to DE region) | URL of FSM's public JWKS endpoint, used to verify JWTs from the FSM Web UI Shell flow. Default: `https://de.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json`. Override for non-DE regions. |
 
 For full details on the inbound authentication model, see [docs/SECURITY.md](docs/SECURITY.md).
@@ -460,7 +460,7 @@ In addition to API access (above), the FSM tenant must be configured to enable i
 ### 1. Clone & Install
 ```bash
 git clone <repository-url>
-cd mobileapptm
+cd com.tng.fsm.timematerialext.app
 npm install
 ```
 
@@ -503,7 +503,7 @@ Additional Properties:
 
 ### 4. Create Destination Service Instance
 ```bash
-cf create-service destination lite mobileapptm-destination
+cf create-service destination lite com.tng.fsm.timematerialext.app-destination
 ```
 
 ### 5. Configure FSM Web Container Authentication Key
@@ -523,31 +523,31 @@ The application requires `FSM_WEBCONTAINER_AUTH_KEY` to start; it refuses to sta
 
 ```bash
 # Push without starting
-cf push mobileapptm --no-start
+cf push com.tng.fsm.timematerialext.app --no-start
 
 # Set the auth key (use the value from Step 5)
-cf set-env mobileapptm FSM_WEBCONTAINER_AUTH_KEY '<the-value-from-step-5>'
+cf set-env com.tng.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<the-value-from-step-5>'
 
 # Optional: override the default JWKS endpoint (used for FSM Web UI Shell auth).
 # The default points at the DE region. Set this if your FSM tenant is in another region.
-cf set-env mobileapptm FSM_JWKS_URL 'https://<region>.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json'
+cf set-env com.tng.fsm.timematerialext.app FSM_JWKS_URL 'https://<region>.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json'
 
 # Start the app
-cf start mobileapptm
+cf start com.tng.fsm.timematerialext.app
 ```
 
 After startup, verify the auth key was loaded:
 ```bash
-cf logs mobileapptm --recent | grep "FSM_WEBCONTAINER_AUTH_KEY is set"
+cf logs com.tng.fsm.timematerialext.app --recent | grep "FSM_WEBCONTAINER_AUTH_KEY is set"
 ```
 You should see `FSM_WEBCONTAINER_AUTH_KEY is set (N chars)` confirming the env var was picked up.
 
 ### 7. Get Application URL
 ```bash
-cf app mobileapptm
+cf app com.tng.fsm.timematerialext.app
 ```
 
-Copy the URL (e.g., `https://mobileapptm-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com`).
+Copy the URL (e.g., `https://com.tng.fsm.timematerialext.app-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com`).
 
 This URL is what you configure in FSM Admin as the Web Container URL so that FSM Mobile knows where to POST. Make sure the Web Container in FSM Admin points at this URL AND has the matching Authentication Key from Step 5.
 
@@ -556,8 +556,8 @@ This URL is what you configure in FSM Admin as the Web Container URL so that FSM
 To rotate the Authentication Key after initial setup:
 
 1. Update the value in FSM Admin → Web Containers → Authentication Key
-2. `cf set-env mobileapptm FSM_WEBCONTAINER_AUTH_KEY '<new-value>'`
-3. `cf restage mobileapptm`
+2. `cf set-env com.tng.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<new-value>'`
+3. `cf restage com.tng.fsm.timematerialext.app`
 
 Active Mobile WebContainer launches will return 401 during the brief window between the FSM-side update and the CF restage; users retap to relaunch with the new key.
 
@@ -574,7 +574,7 @@ Navigate to: **FSM Admin → Company → Web Containers**
 |-------|-------|
 | **Name** | `T&M Journal` |
 | **External ID** | `Z_TMJournal` |
-| **URL** | `https://mobileapptm-xxx.cfapps.eu10.hana.ondemand.com` |
+| **URL** | `https://com.tng.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com` |
 | **Object Types** | `Activity` |
 | **Authentication Key** | A strong random value (32+ chars). The same value MUST be set as the `FSM_WEBCONTAINER_AUTH_KEY` env var on the deployed app. See [docs/SECURITY.md](docs/SECURITY.md) for rotation procedure. |
 | **Active** | ✓ Checked |
@@ -623,7 +623,7 @@ Navigate to: **FSM Admin → Company → Extensions**
 |-------|-------|
 | **Name** | `T&M Journal` |
 | **External ID** | `Z_TMJournal_Web` |
-| **URL** | `https://mobileapptm-xxx.cfapps.eu10.hana.ondemand.com` |
+| **URL** | `https://com.tng.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com` |
 | **Context** | `Activity` or `ServiceCall` |
 | **Active** | ✓ Checked |
 
@@ -674,10 +674,10 @@ For local UI testing without an FSM session, URL parameters can drive the initia
 
 ```
 # Open with specific Activity
-https://mobileapptm-xxx.cfapps.eu10.hana.ondemand.com?activityId=ABC123
+https://com.tng.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com?activityId=ABC123
 
 # Open with specific Service Call
-https://mobileapptm-xxx.cfapps.eu10.hana.ondemand.com?serviceCallId=XYZ789
+https://com.tng.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com?serviceCallId=XYZ789
 ```
 
 > **Important — current limitation:** With strict authentication enabled on `/api/v1/*`, standalone mode loads the page but cannot fetch any data. All API calls return HTTP 401 because no auth path was established (the Mobile flow needs the Authentication Key POST; the Web UI flow needs the Shell SDK's JWT). The page renders with empty caches and broken data.
@@ -965,7 +965,7 @@ see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## 📁 Project Structure
 ```
-mobileapptm/
+com.tng.fsm.timematerialext.app/
 │
 ├── # ─────────── ROOT LEVEL ───────────
 ├── index.js                             # Express server, inbound auth (Auth Key + JWT), session store, /api/v1 routes (~150 lines)
@@ -1364,7 +1364,7 @@ router.get("/your-endpoint", async (req, res) => {
 4. **Add to cache warming** in `webapp/utils/services/CacheService.js`:
 ```javascript
 // Add to imports
-"mobileapptm/utils/services/YourService"
+"com.tng.fsm.timematerialext.app/utils/services/YourService"
 
 // Add to _executeWarmup parallel loading
 YourService.fetchData()
@@ -1465,15 +1465,15 @@ const isTravelType = TypeConfigService.isTravelType(serviceProductExtId);
 
 ### View Logs
 ```bash
-cf logs mobileapptm --recent
+cf logs com.tng.fsm.timematerialext.app --recent
 ```
 
 ### Common Issues
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| Server crashes immediately on startup with `FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set` | Required env var missing | `cf set-env mobileapptm FSM_WEBCONTAINER_AUTH_KEY '<value>'` then `cf restage mobileapptm`. Locally: `export FSM_WEBCONTAINER_AUTH_KEY='...'` before `npm start`. |
-| Mobile launch returns 401 (`WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`) | FSM Admin Authentication Key doesn't match the `FSM_WEBCONTAINER_AUTH_KEY` env var | Both values must match byte-exactly. Compare FSM Admin → Web Containers → Authentication Key against the env var (`cf env mobileapptm`). |
+| Server crashes immediately on startup with `FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set` | Required env var missing | `cf set-env com.tng.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<value>'` then `cf restage com.tng.fsm.timematerialext.app`. Locally: `export FSM_WEBCONTAINER_AUTH_KEY='...'` before `npm start`. |
+| Mobile launch returns 401 (`WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`) | FSM Admin Authentication Key doesn't match the `FSM_WEBCONTAINER_AUTH_KEY` env var | Both values must match byte-exactly. Compare FSM Admin → Web Containers → Authentication Key against the env var (`cf env com.tng.fsm.timematerialext.app`). |
 | Web UI extension launches but all data is missing / 401s in console | Shell session init failed or JWKS validation failed | Check `cf logs` for `SHELL-INIT: rejected — JWT validation failed: ...`. If JWKS unreachable, verify `FSM_JWKS_URL` (default points at DE region; override for other regions). |
 | Standalone URL access (`?activityId=...`) loads page but no data populates | Strict auth — no Mobile Auth Key POST and no Web UI JWT means no session token | Standalone is now page-load-only for pure UI work. Use FSM Mobile or FSM Web UI for full functionality. |
 | 404 on app load | Static file path wrong | Verify `express.static` points to correct folder |
@@ -1489,7 +1489,7 @@ cf logs mobileapptm --recent
 | Wrong creation form showing | Service Product ID not in correct type list | Use Type Config dialog to add/remove IDs |
 | Delete Selected toast says "0 entries deleted" but entries are gone | Multipart batch response parser drops bodyless 204 responses | Cosmetic — entries are actually deleted. Refresh the page to confirm. |
 | Refresh button click crashes with `Cannot read properties of undefined (reading 'setProperty')` | View model not yet initialized | Should not happen with current code (sync `onInit` ensures model exists before view renders). If it appears, verify `View1.controller.js` `onInit` is **not** declared `async`. |
-| `[FUTURE FATAL] mobileapptm.controller.View1: The registered Event Listener 'onInit' must not have a return value` | `onInit` declared as `async` (returns Promise) | Make `onInit` synchronous; delegate async work to a separate `_initializeAsync` method called fire-and-forget. |
+| `[FUTURE FATAL] com.tng.fsm.timematerialext.app.controller.View1: The registered Event Listener 'onInit' must not have a return value` | `onInit` declared as `async` (returns Promise) | Make `onInit` synchronous; delegate async work to a separate `_initializeAsync` method called fire-and-forget. |
 | `fetch-wrapper: session readiness gate timed out after 10s` | Some `/api/v1/*` call fired before session was established | Defensive backstop in `Component.js`. Should not appear in normal operation — investigate which service is fetching outside the controlled bootstrap sequence in `_initializeAsync`. |
 | Web UI extension works first time, then 401s after some idle | Session token expired (30 min TTL) or container restarted (in-memory `sessionStore` cleared) | Refresh the iframe; the Shell SDK will re-issue a JWT and the app will re-establish a session. |
 | `class` assertion error in console | UI5 debug mode warning | Can be ignored — cosmetic only, doesn't affect functionality |
@@ -1590,9 +1590,9 @@ Batch delete: 2 entries (transactional: false)
 |-------|-----------|----------|
 | Don't know if Mobile cookie is set | `document.cookie` in DevTools console | Should contain `fsm_session=...`. If absent in iframe (Web UI), this is expected — Web UI uses Bearer header, not cookie. |
 | Don't know if Web UI Bearer token is set | `window.__fsmSessionToken` in DevTools console | Should be a 32+ char base64url string after Shell session init. If `undefined` or `null`, the init flow didn't complete — check console for ContextService errors. |
-| Don't know which auth source is being used | `cf logs mobileapptm \| grep "AUTH:"` | Successful requests don't log; rejections include `source=cookie` or `source=bearer` so you can see which path the request came in on. |
+| Don't know which auth source is being used | `cf logs com.tng.fsm.timematerialext.app \| grep "AUTH:"` | Successful requests don't log; rejections include `source=cookie` or `source=bearer` so you can see which path the request came in on. |
 | Want to verify JWKS endpoint is reachable from CF | `curl https://de.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json` | Should return JSON with `"keys": [...]` array, HTTP 200. If unreachable, JWT validation will fail and Web UI auth breaks. |
-| Want to inspect what FSM Mobile is sending | `cf logs mobileapptm \| grep "WC-ACCESS-POINT"` | Successful POSTs log `context stored, session issued` with the contextKey. Missing log = POST never arrived. Rejection log = key mismatch. |
+| Want to inspect what FSM Mobile is sending | `cf logs com.tng.fsm.timematerialext.app \| grep "WC-ACCESS-POINT"` | Successful POSTs log `context stored, session issued` with the contextKey. Missing log = POST never arrived. Rejection log = key mismatch. |
 
 For the full inbound auth model (threat model, rotation procedures, why not XSUAA), see [docs/SECURITY.md](docs/SECURITY.md).
 
@@ -1603,7 +1603,7 @@ For the full inbound auth model (threat model, rotation procedures, why not XSUA
 |                                    |                                                          |
 |------------------------------------|----------------------------------------------------------|
 | **App Name**                       | T&M Journal                                              |
-| **Module Name**                    | mobileapptm                                              |
+| **Module Name**                    | com.tng.fsm.timematerialext.app                                              |
 | **Framework**                      | SAP UI5 (Fiori) + Node.js Express                        |
 | **UI5 Theme**                      | sap_horizon                                              |
 | **UI5 Version**                    | Latest (OpenUI5 from CDN)                                |
