@@ -8,6 +8,15 @@ A SAP Fiori mobile application for SAP Field Service Management (FSM), designed 
 
 ---
 
+## Documentation
+
+- [docs/SETUP.md](docs/SETUP.md) — fresh deployment to a new BTP subaccount
+- [docs/RENAME.md](docs/RENAME.md) — renaming an existing app to comply with naming conventions
+- [docs/NAMING.md](docs/NAMING.md) — naming convention reference for all TNG FSM extensions
+- [docs/SECURITY.md](docs/SECURITY.md) — security architecture and threat model
+
+---
+
 ## 📋 Table of Contents
 
 - [Screenshots](#-screenshots)
