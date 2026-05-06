@@ -19,7 +19,7 @@
  * - POST /api/get-persons (loadAll: true)
  * 
  * @file PersonService.js
- * @module mobileapptm/utils/services/PersonService
+ * @module com/tng/fsm/timematerialext/app/utils/services/PersonService
  */
 sap.ui.define([], () => {
     "use strict";

@@ -13,22 +13,22 @@
  * - _showEntryJSON: Debug helper to display entry data as formatted JSON
  * 
  * @file TMDialogMixin.js
- * @module mobileapptm/controller/mixin/TMDialogMixin
+ * @module com/tng/fsm/timematerialext/app/controller/mixin/TMDialogMixin
  */
 sap.ui.define([
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "mobileapptm/utils/tm/TMDialogService",
-    "mobileapptm/utils/tm/TMCreationService",
-    "mobileapptm/utils/tm/TMDataService",
-    "mobileapptm/utils/tm/TMEditService",
-    "mobileapptm/utils/helpers/DateTimeService",
-    "mobileapptm/utils/services/UdfMetaService",
-    "mobileapptm/utils/services/ApprovalService",
-    "mobileapptm/utils/services/PersonService",
-    "mobileapptm/utils/services/TimeTaskService",
-    "mobileapptm/utils/services/ItemService",
-    "mobileapptm/utils/services/ExpenseTypeService"
+    "com/tng/fsm/timematerialext/app/utils/tm/TMDialogService",
+    "com/tng/fsm/timematerialext/app/utils/tm/TMCreationService",
+    "com/tng/fsm/timematerialext/app/utils/tm/TMDataService",
+    "com/tng/fsm/timematerialext/app/utils/tm/TMEditService",
+    "com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService",
+    "com/tng/fsm/timematerialext/app/utils/services/UdfMetaService",
+    "com/tng/fsm/timematerialext/app/utils/services/ApprovalService",
+    "com/tng/fsm/timematerialext/app/utils/services/PersonService",
+    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService"
 ], (MessageToast, MessageBox, TMDialogService, TMCreationService, TMDataService, TMEditService, DateTimeService, UdfMetaService, ApprovalService, PersonService, TimeTaskService, ItemService, ExpenseTypeService) => {
     "use strict";
 

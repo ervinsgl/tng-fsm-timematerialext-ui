@@ -20,7 +20,7 @@
  * - GET /api/get-time-tasks
  * 
  * @file TimeTaskService.js
- * @module mobileapptm/utils/services/TimeTaskService
+ * @module com/tng/fsm/timematerialext/app/utils/services/TimeTaskService
  */
 sap.ui.define([], () => {
     "use strict";

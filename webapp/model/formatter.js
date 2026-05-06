@@ -15,10 +15,10 @@
  *   text="{path: 'view>startDateTime', formatter: '.formatter.formatDateTime'}"
  * 
  * @file formatter.js
- * @module mobileapptm/model/formatter
+ * @module com/tng/fsm/timematerialext/app/model/formatter
  */
 sap.ui.define([
-    "mobileapptm/utils/services/TypeConfigService"
+    "com/tng/fsm/timematerialext/app/utils/services/TypeConfigService"
 ], (TypeConfigService) => {
     "use strict";
 
@@ -180,7 +180,7 @@ sap.ui.define([
          */
         _getResourceBundle: function() {
             try {
-                const oComponent = sap.ui.getCore().getComponent("container-mobileapptm");
+                const oComponent = sap.ui.getCore().getComponent("container-com.tng.fsm.timematerialext.app");
                 if (oComponent) {
                     return oComponent.getModel("i18n").getResourceBundle();
                 }
@@ -198,7 +198,7 @@ sap.ui.define([
         formatHoursUnit: function(type) {
             if (type === 'Time Effort') {
                 try {
-                    const oComponent = sap.ui.getCore().getComponent("container-mobileapptm");
+                    const oComponent = sap.ui.getCore().getComponent("container-com.tng.fsm.timematerialext.app");
                     if (oComponent) {
                         const oBundle = oComponent.getModel("i18n").getResourceBundle();
                         return oBundle.getText("unitHours");
@@ -217,7 +217,7 @@ sap.ui.define([
         formatPiecesUnit: function(type) {
             if (type === 'Material') {
                 try {
-                    const oComponent = sap.ui.getCore().getComponent("container-mobileapptm");
+                    const oComponent = sap.ui.getCore().getComponent("container-com.tng.fsm.timematerialext.app");
                     if (oComponent) {
                         const oBundle = oComponent.getModel("i18n").getResourceBundle();
                         return oBundle.getText("unitPieces");
@@ -235,7 +235,7 @@ sap.ui.define([
          */
         formatRemainingQty: function(qty) {
             try {
-                const oComponent = sap.ui.getCore().getComponent("container-mobileapptm");
+                const oComponent = sap.ui.getCore().getComponent("container-com.tng.fsm.timematerialext.app");
                 if (oComponent) {
                     const oBundle = oComponent.getModel("i18n").getResourceBundle();
                     return oBundle.getText("remainingMaterialQty", [qty || 0]);

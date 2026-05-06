@@ -5,7 +5,7 @@
  * Provides the device model used for responsive layout decisions.
  * 
  * @file models.js
- * @module mobileapptm/model/models
+ * @module com/tng/fsm/timematerialext/app/model/models
  */
 sap.ui.define([
     "sap/ui/model/json/JSONModel",

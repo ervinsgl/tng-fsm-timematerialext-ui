@@ -1,7 +1,7 @@
 {
   "_version": "1.76.0",
   "sap.app": {
-    "id": "mobileapptm",
+    "id": "com.tng.fsm.timematerialext.app",
     "type": "application",
     "i18n": "i18n/i18n.properties",
     "applicationVersion": {
@@ -53,7 +53,7 @@
       "i18n": {
         "type": "sap.ui.model.resource.ResourceModel",
         "settings": {
-          "bundleName": "mobileapptm.i18n.i18n",
+          "bundleName": "com.tng.fsm.timematerialext.app.i18n.i18n",
           "supportedLocales": [
             "",
             "de"
@@ -73,7 +73,7 @@
       "config": {
         "routerClass": "sap.m.routing.Router",
         "viewType": "XML",
-        "viewPath": "mobileapptm.view",
+        "viewPath": "com.tng.fsm.timematerialext.app.view",
         "controlId": "app",
         "controlAggregation": "pages"
       },
@@ -97,7 +97,7 @@
       }
     },
     "rootView": {
-      "viewName": "mobileapptm.view.App",
+      "viewName": "com.tng.fsm.timematerialext.app.view.App",
       "type": "XML",
       "id": "App",
       "async": true
@@ -105,6 +105,6 @@
   },
   "sap.cloud": {
     "public": true,
-    "service": "mobileapptm"
+    "service": "com.tng.fsm.timematerialext.app"
   }
 }

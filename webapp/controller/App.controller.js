@@ -6,7 +6,7 @@
  * is handled by View1.controller.js and its mixins.
  * 
  * @file App.controller.js
- * @module mobileapptm/controller/App
+ * @module com/tng/fsm/timematerialext/app/controller/App
  * @extends sap.ui.core.mvc.Controller
  */
 sap.ui.define([
@@ -14,7 +14,7 @@ sap.ui.define([
 ], (BaseController) => {
   "use strict";
 
-  return BaseController.extend("mobileapptm.controller.App", {
+  return BaseController.extend("com.tng.fsm.timematerialext.app.controller.App", {
       onInit() {
       }
   });

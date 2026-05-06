@@ -15,7 +15,7 @@
  * - GET /api/get-expense-types
  * 
  * @file ExpenseTypeService.js
- * @module mobileapptm/utils/services/ExpenseTypeService
+ * @module com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService
  */
 sap.ui.define([], () => {
     "use strict";

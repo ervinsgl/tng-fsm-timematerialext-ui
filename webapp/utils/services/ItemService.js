@@ -16,7 +16,7 @@
  * - GET /api/get-items
  * 
  * @file ItemService.js
- * @module mobileapptm/utils/services/ItemService
+ * @module com/tng/fsm/timematerialext/app/utils/services/ItemService
  */
 sap.ui.define([], () => {
     "use strict";

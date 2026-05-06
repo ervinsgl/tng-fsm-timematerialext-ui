@@ -18,7 +18,7 @@
  * 5. â†’ Returns resolved org level with id, name, etc.
  * 
  * @file OrganizationService.js
- * @module mobileapptm/utils/services/OrganizationService
+ * @module com/tng/fsm/timematerialext/app/utils/services/OrganizationService
  */
 sap.ui.define([], () => {
     "use strict";

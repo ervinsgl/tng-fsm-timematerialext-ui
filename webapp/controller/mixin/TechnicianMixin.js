@@ -12,10 +12,10 @@
  * - onTimeEffortDurationChange: Convert hours to minutes when duration StepInput changes
  * 
  * @file TechnicianMixin.js
- * @module mobileapptm/controller/mixin/TechnicianMixin
+ * @module com/tng/fsm/timematerialext/app/controller/mixin/TechnicianMixin
  */
 sap.ui.define([
-    "mobileapptm/utils/services/TechnicianService"
+    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService"
 ], (TechnicianService) => {
     "use strict";
 

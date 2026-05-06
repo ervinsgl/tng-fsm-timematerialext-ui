@@ -19,11 +19,11 @@
  * - _generateDateRange: Expand start/end dates into daily array
  * 
  * @file TMTimeEntryMixin.js
- * @module mobileapptm/controller/mixin/TMTimeEntryMixin
+ * @module com/tng/fsm/timematerialext/app/controller/mixin/TMTimeEntryMixin
  */
 sap.ui.define([
     "sap/m/MessageToast",
-    "mobileapptm/utils/services/TechnicianService"
+    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService"
 ], (MessageToast, TechnicianService) => {
     "use strict";
 

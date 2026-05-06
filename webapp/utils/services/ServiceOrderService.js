@@ -16,7 +16,7 @@
  * The composite-tree API returns service call at ROOT level with nested activities.
  * 
  * @file ServiceOrderService.js
- * @module mobileapptm/utils/services/ServiceOrderService
+ * @module com/tng/fsm/timematerialext/app/utils/services/ServiceOrderService
  */
 sap.ui.define([], () => {
     "use strict";

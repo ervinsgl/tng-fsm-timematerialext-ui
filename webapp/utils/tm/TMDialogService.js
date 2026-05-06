@@ -16,27 +16,27 @@
  * - TMCreateDialog: Create new T&M entries
  * 
  * @file TMDialogService.js
- * @module mobileapptm/utils/tm/TMDialogService
+ * @module com/tng/fsm/timematerialext/app/utils/tm/TMDialogService
  * @requires sap/ui/core/Fragment
  * @requires sap/ui/model/json/JSONModel
  * @requires sap/m/MessageToast
- * @requires mobileapptm/utils/services/TechnicianService
- * @requires mobileapptm/utils/tm/TMCreationService
- * @requires mobileapptm/utils/services/TimeTaskService
- * @requires mobileapptm/utils/services/ItemService
- * @requires mobileapptm/utils/services/ExpenseTypeService
+ * @requires com/tng/fsm/timematerialext/app/utils/services/TechnicianService
+ * @requires com/tng/fsm/timematerialext/app/utils/tm/TMCreationService
+ * @requires com/tng/fsm/timematerialext/app/utils/services/TimeTaskService
+ * @requires com/tng/fsm/timematerialext/app/utils/services/ItemService
+ * @requires com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService
  */
 sap.ui.define([
     "sap/ui/core/Fragment",
     "sap/ui/model/json/JSONModel",
     "sap/m/MessageToast",
-    "mobileapptm/utils/services/TechnicianService",
-    "mobileapptm/utils/tm/TMCreationService",
-    "mobileapptm/utils/services/TimeTaskService",
-    "mobileapptm/utils/services/ItemService",
-    "mobileapptm/utils/services/ExpenseTypeService",
-    "mobileapptm/utils/services/ActivityService",
-    "mobileapptm/utils/services/TypeConfigService"
+    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService",
+    "com/tng/fsm/timematerialext/app/utils/tm/TMCreationService",
+    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService",
+    "com/tng/fsm/timematerialext/app/utils/services/ActivityService",
+    "com/tng/fsm/timematerialext/app/utils/services/TypeConfigService"
 ], (Fragment, JSONModel, MessageToast, TechnicianService, TMCreationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, TypeConfigService) => {
     "use strict";
 
@@ -387,7 +387,7 @@ sap.ui.define([
         async _openDialog(fragmentName, model, modelName, dialogProperty) {
             if (!this._controller[dialogProperty]) {
                 this._controller[dialogProperty] = await Fragment.load({
-                    name: `mobileapptm.view.fragments.${fragmentName}`,
+                    name: `com.tng.fsm.timematerialext.app.view.fragments.${fragmentName}`,
                     controller: this._controller
                 });
                 this._controller.getView().addDependent(this._controller[dialogProperty]);

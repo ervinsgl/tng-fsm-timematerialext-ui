@@ -13,7 +13,7 @@
  * - _updateMaterialQuantityStates: Set min/max ValueStates on quantity inputs
  * 
  * @file TMMaterialMixin.js
- * @module mobileapptm/controller/mixin/TMMaterialMixin
+ * @module com/tng/fsm/timematerialext/app/controller/mixin/TMMaterialMixin
  */
 sap.ui.define([
     "sap/m/MessageToast"

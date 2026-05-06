@@ -57,11 +57,11 @@
  */
 sap.ui.define([
     "sap/ui/core/UIComponent",
-    "mobileapptm/model/models"
+    "com/tng/fsm/timematerialext/app/model/models"
 ], (UIComponent, models) => {
     "use strict";
 
-    return UIComponent.extend("mobileapptm.Component", {
+    return UIComponent.extend("com.tng.fsm.timematerialext.app.Component", {
         metadata: {
             manifest: "json",
             interfaces: [

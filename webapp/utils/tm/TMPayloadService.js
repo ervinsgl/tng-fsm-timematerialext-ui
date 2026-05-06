@@ -25,13 +25,13 @@
  * - object: Activity reference
  * 
  * @file TMPayloadService.js
- * @module mobileapptm/utils/tm/TMPayloadService
- * @requires mobileapptm/utils/tm/TMCreationService
- * @requires mobileapptm/utils/services/TimeTaskService
+ * @module com/tng/fsm/timematerialext/app/utils/tm/TMPayloadService
+ * @requires com/tng/fsm/timematerialext/app/utils/tm/TMCreationService
+ * @requires com/tng/fsm/timematerialext/app/utils/services/TimeTaskService
  */
 sap.ui.define([
-    "mobileapptm/utils/tm/TMCreationService",
-    "mobileapptm/utils/services/TimeTaskService"
+    "com/tng/fsm/timematerialext/app/utils/tm/TMCreationService",
+    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService"
 ], (TMCreationService, TimeTaskService) => {
     "use strict";
 

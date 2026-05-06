@@ -19,13 +19,13 @@
  * Note: UdfMetaService uses on-demand caching (lazy load per ID)
  * 
  * @file CacheService.js
- * @module mobileapptm/utils/services/CacheService
+ * @module com/tng/fsm/timematerialext/app/utils/services/CacheService
  */
 sap.ui.define([
-    "mobileapptm/utils/services/TechnicianService",
-    "mobileapptm/utils/services/TimeTaskService",
-    "mobileapptm/utils/services/ItemService",
-    "mobileapptm/utils/services/ExpenseTypeService"
+    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService",
+    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService"
 ], (TechnicianService, TimeTaskService, ItemService, ExpenseTypeService) => {
     "use strict";
 

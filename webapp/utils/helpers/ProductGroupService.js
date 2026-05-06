@@ -20,7 +20,7 @@
  * }
  * 
  * @file ProductGroupService.js
- * @module mobileapptm/utils/helpers/ProductGroupService
+ * @module com/tng/fsm/timematerialext/app/utils/helpers/ProductGroupService
  */
 sap.ui.define([], () => {
     "use strict";
