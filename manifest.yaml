@@ -10,4 +10,4 @@ applications:
     routes:
       - route: tng-fsm-timematerialext-ui-dev-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com
     services:
-      - fsm-timematerialext-destination-devclear
+      - fsm-timematerialext-destination-dev
