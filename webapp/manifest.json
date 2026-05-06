@@ -54,7 +54,10 @@
         "type": "sap.ui.model.resource.ResourceModel",
         "settings": {
           "bundleName": "mobileapptm.i18n.i18n",
-          "supportedLocales": ["", "de"],
+          "supportedLocales": [
+            "",
+            "de"
+          ],
           "fallbackLocale": ""
         }
       }
@@ -69,28 +72,27 @@
     "routing": {
       "config": {
         "routerClass": "sap.m.routing.Router",
-        "controlAggregation": "pages",
-        "controlId": "app",
-        "transition": "slide",
-        "type": "View",
         "viewType": "XML",
-        "path": "mobileapptm.view",
-        "async": true,
-        "viewPath": "mobileapptm.view"
+        "viewPath": "mobileapptm.view",
+        "controlId": "app",
+        "controlAggregation": "pages"
       },
       "routes": [
         {
-          "name": "RouteView1",
-          "pattern": ":?query:",
+          "name": "RouteTimeMaterialExt",
+          "pattern": "",
           "target": [
-            "TargetView1"
+            "TargetTimeMaterialExt"
           ]
         }
       ],
       "targets": {
-        "TargetView1": {
-          "id": "View1",
-          "name": "View1"
+        "TargetTimeMaterialExt": {
+          "viewType": "XML",
+          "transition": "slide",
+          "clearControlAggregation": false,
+          "viewId": "TimeMaterialExt",
+          "viewName": "TimeMaterialExt"
         }
       }
     },

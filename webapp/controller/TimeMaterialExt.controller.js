@@ -55,7 +55,7 @@ sap.ui.define([
     /**
      * Merge all mixins with controller methods
      */
-    return Controller.extend("mobileapptm.controller.View1", Object.assign({},
+    return Controller.extend("mobileapptm.controller.TimeMaterialExt", Object.assign({},
         DataLoadingMixin,
         TMDialogMixin,
         TMEditMixin,
@@ -135,7 +135,7 @@ sap.ui.define([
                 try {
                     await this._loadWebContainerContext();
                 } catch (err) {
-                    console.error("View1: _loadWebContainerContext failed; continuing", err);
+                    console.error("TimeMaterialExt: _loadWebContainerContext failed; continuing", err);
                 }
 
                 // Now that auth is established, initialize TypeConfigService.
@@ -145,7 +145,7 @@ sap.ui.define([
                 try {
                     await TypeConfigService.init();
                 } catch (err) {
-                    console.error("View1: TypeConfigService.init() failed; continuing with defaults", err);
+                    console.error("TimeMaterialExt: TypeConfigService.init() failed; continuing with defaults", err);
                 }
 
                 // Now fire the data-loading work. These can run in parallel with each other

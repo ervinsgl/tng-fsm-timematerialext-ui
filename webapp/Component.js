@@ -77,7 +77,7 @@ sap.ui.define([
 
             if (router) {
                 router.attachBypassed(() => {
-                    router.navTo("RouteView1", {}, true);
+                    router.navTo("RouteTimeMaterialExt", {}, true);
                 });
 
                 router.initialize();
@@ -85,9 +85,9 @@ sap.ui.define([
                 setTimeout(() => {
                     const targets = router.getTargets();
                     if (targets) {
-                        const view1Target = targets.getTarget("TargetView1");
-                        if (view1Target && !view1Target._oView) {
-                            router.navTo("RouteView1", {}, true);
+                        const tmExtTarget = targets.getTarget("TargetTimeMaterialExt");
+                        if (tmExtTarget && !tmExtTarget._oView) {
+                            router.navTo("RouteTimeMaterialExt", {}, true);
                         }
                     }
                 }, 500);

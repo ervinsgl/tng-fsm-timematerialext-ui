@@ -1,5 +1,5 @@
 <mvc:View
-    controllerName="mobileapptm.controller.View1"
+    controllerName="mobileapptm.controller.TimeMaterialExt"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
