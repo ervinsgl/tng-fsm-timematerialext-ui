@@ -1,5 +1,5 @@
 applications:
-  - name: mobileapptm
+  - name: tng-fsm-timematerialext-ui-dev
     memory: 512M
     disk_quota: 512M
     instances: 1
@@ -8,6 +8,6 @@ applications:
     command: npm start
     path: .
     routes:
-      - route: mobileapptm-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com
+      - route: tng-fsm-timematerialext-ui-dev-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com
     services:
-      - mobileapptm-destination
+      - fsm-timematerialext-destination-devclear
