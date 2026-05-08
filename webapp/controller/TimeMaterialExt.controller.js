@@ -253,6 +253,7 @@ sap.ui.define([
 
                 const quantity = this._getUdfValue(fullActivity, 'Z_Quantity') || 'N/A';
                 const quantityUoM = this._getUdfValue(fullActivity, 'Z_QuantityUoM') || 'N/A';
+                const itemTypeCode = this._getUdfValue(fullActivity, 'Z_ActivityItemTypeCode') || 'N/A';
                 const formattedQuantity = quantity !== 'N/A' && quantityUoM !== 'N/A'
                     ? `${quantity} ${quantityUoM}`
                     : quantity;
@@ -324,6 +325,7 @@ sap.ui.define([
                     quantity: quantity,
                     quantityUoM: quantityUoM,
                     formattedQuantity: formattedQuantity,
+                    itemTypeCode: itemTypeCode,
 
                     addressStreet: fullActivity.address?.street || '',
                     addressStreetNumber: fullActivity.address?.streetNumber || '',

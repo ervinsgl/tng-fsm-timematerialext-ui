@@ -362,6 +362,7 @@ sap.ui.define([
                 formattedStartDate: oActivity.formattedStartDate || 'N/A',
                 formattedEndDate: oActivity.formattedEndDate || 'N/A',
                 formattedDuration: oActivity.formattedDuration || 'N/A',
+                itemTypeCode: oActivity.itemTypeCode || 'N/A',
                 quantity: oActivity.quantity || 'N/A',
                 quantityUoM: oActivity.quantityUoM || 'N/A',
                 responsibleExternalId: oActivity.responsibleId || 'N/A',

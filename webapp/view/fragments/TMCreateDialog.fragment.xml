@@ -69,6 +69,11 @@
                             <Label text="{i18n>createTMUnitOfMeasure}" design="Bold" class="infoLabel"/>
                             <Text text="{createTM>/quantityUoM}" class="infoValue detailFieldValue"/>
                         </VBox>
+                        <VBox class="detailField">
+                            <layoutData><l:GridData span="XL4 L4 M6 S12"/></layoutData>
+                            <Label text="{i18n>activityItemType}" design="Bold" class="infoLabel"/>
+                            <Text text="{createTM>/itemTypeCode}" class="infoValue detailFieldValue"/>
+                        </VBox>
                     </l:Grid>
                 </VBox>
                 

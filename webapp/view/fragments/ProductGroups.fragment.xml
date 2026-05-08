@@ -92,6 +92,10 @@
                                                     <Label text="{i18n>activityOrgLevel}" design="Bold" class="activityFieldLabel"/>
                                                     <Text text="{view>orgLevelDisplayText}" class="activityFieldValue"/>
                                                 </HBox>
+                                                <HBox class="activityFieldRow">
+                                                    <Label text="{i18n>activityItemType}" design="Bold" class="activityFieldLabel"/>
+                                                    <Text text="{view>itemTypeCode}" class="activityFieldValue"/>
+                                                </HBox>
                                             </VBox>
                                             <VBox class="activityColumn">
                                                 <HBox class="activityFieldRow">
