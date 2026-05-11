@@ -53,7 +53,6 @@
 
 /**
  * Component.js
- * ... (rest of file unchanged — keep your existing sap.ui.define block as-is)
  */
 sap.ui.define([
     "sap/ui/core/UIComponent",
