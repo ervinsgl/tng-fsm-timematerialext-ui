@@ -53,6 +53,24 @@
 
 /**
  * Component.js
+ * 
+ * Main UI5 application component for the FSM Service Confirmation app.
+ * Initializes the application, sets up models, and configures routing.
+ * 
+ * Key Features:
+ * - Initialize device model for responsive layouts
+ * - Configure router with mobile navigation fixes
+ * - Handle bypassed routes for FSM Mobile compatibility
+ * 
+ * Mobile Compatibility:
+ * FSM Mobile web container may bypass initial routing, so the component
+ * includes fallback navigation to ensure View1 loads correctly.
+ * 
+ * @file Component.js
+ * @module mobileapptm/Component
+ * @extends sap.ui.core.UIComponent
+ * @requires sap/ui/core/UIComponent
+ * @requires mobileapptm/model/models
  */
 sap.ui.define([
     "sap/ui/core/UIComponent",
