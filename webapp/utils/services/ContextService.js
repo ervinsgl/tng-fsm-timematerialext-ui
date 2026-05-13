@@ -20,7 +20,7 @@
  * @file ContextService.js
  * @module com/tng/fsm/timematerialext/app/utils/services/ContextService
  */
-sap.ui.define([], function() {
+sap.ui.define([], function () {
     "use strict";
 
     /**
@@ -78,7 +78,7 @@ sap.ui.define([], function() {
          *   - cloudHost: FSM cloud host URL
          *   - userName: User name
          */
-        getContext: function() {
+        getContext: function () {
             return new Promise((resolve, reject) => {
                 // Return cached context if available
                 if (_cachedContext) {
@@ -105,7 +105,7 @@ sap.ui.define([], function() {
          * Detect environment and get context
          * @private
          */
-        _detectAndGetContext: async function() {
+        _detectAndGetContext: async function () {
             // Priority 1: URL parameters (for development/testing)
             const urlContext = this._getURLContext();
             if (urlContext.objectId) {
@@ -138,7 +138,7 @@ sap.ui.define([], function() {
                             }
                         } else {
                             console.warn("ContextService: Shell context has no authToken — " +
-                                         "/api/v1/* calls will not be authenticated");
+                                "/api/v1/* calls will not be authenticated");
                         }
 
                         return shellContext;
@@ -178,7 +178,7 @@ sap.ui.define([], function() {
          * Check if app is running in an iframe
          * @private
          */
-        _isInIframe: function() {
+        _isInIframe: function () {
             try {
                 return window.self !== window.top;
             } catch (e) {
@@ -186,30 +186,30 @@ sap.ui.define([], function() {
             }
         },
 
-         /**
-         * Establish a backend session for the Web UI Shell flow.
-         * 
-         * POSTs the Shell SDK's access_token to /api/v1/shell-session-init.
-         * The backend verifies the JWT against FSM's JWKS and returns a
-         * session token. We store the token on window.__fsmSessionToken so
-         * the global fetch wrapper in Component.js can attach it as an
-         * Authorization: Bearer header on subsequent /api/v1/* requests.
-         * 
-         * Why a Bearer header instead of just relying on the cookie:
-         * The FSM Web UI loads our app in a cross-site iframe. Modern
-         * browsers (Edge, Chrome, Safari) refuse to store third-party
-         * cookies even with SameSite=None; Secure set. The cookie's
-         * Set-Cookie response header is silently dropped by the browser.
-         * The Authorization header is the reliable mechanism for this
-         * context. The Mobile WebView flow continues to use cookies because
-         * the WebView is a first-party browsing context.
-         * 
-         * @param {string} authToken - The FSM JWT (access_token) from Shell SDK
-         * @returns {Promise<Object>} The session info returned by the backend
-         * @throws {Error} If the backend rejects the token or the request fails
-         * @private
-         */
-        _initializeShellSession: async function(authToken) {
+        /**
+        * Establish a backend session for the Web UI Shell flow.
+        * 
+        * POSTs the Shell SDK's access_token to /api/v1/shell-session-init.
+        * The backend verifies the JWT against FSM's JWKS and returns a
+        * session token. We store the token on window.__fsmSessionToken so
+        * the global fetch wrapper in Component.js can attach it as an
+        * Authorization: Bearer header on subsequent /api/v1/* requests.
+        * 
+        * Why a Bearer header instead of just relying on the cookie:
+        * The FSM Web UI loads our app in a cross-site iframe. Modern
+        * browsers (Edge, Chrome, Safari) refuse to store third-party
+        * cookies even with SameSite=None; Secure set. The cookie's
+        * Set-Cookie response header is silently dropped by the browser.
+        * The Authorization header is the reliable mechanism for this
+        * context. The Mobile WebView flow continues to use cookies because
+        * the WebView is a first-party browsing context.
+        * 
+        * @param {string} authToken - The FSM JWT (access_token) from Shell SDK
+        * @returns {Promise<Object>} The session info returned by the backend
+        * @throws {Error} If the backend rejects the token or the request fails
+        * @private
+        */
+        _initializeShellSession: async function (authToken) {
             const response = await fetch('/api/v1/shell-session-init', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -238,7 +238,7 @@ sap.ui.define([], function() {
                 console.log("ContextService: Session token stored for Bearer auth (Web UI flow)");
             } else {
                 console.warn("ContextService: shell-session-init returned no sessionToken — " +
-                             "/api/v1/* calls will rely on cookie (likely to fail in iframe)");
+                    "/api/v1/* calls will rely on cookie (likely to fail in iframe)");
             }
 
             return result;
@@ -248,7 +248,7 @@ sap.ui.define([], function() {
          * Get context from URL parameters
          * @private
          */
-        _getURLContext: function() {
+        _getURLContext: function () {
             const urlParams = new URLSearchParams(window.location.search);
             const activityId = urlParams.get('activityId');
             const serviceCallId = urlParams.get('serviceCallId');
@@ -286,7 +286,7 @@ sap.ui.define([], function() {
          * e.g. /?contextKey=userName_cloudId — we read it here and pass it to GET.
          * @private
          */
-        _getMobileContext: async function() {
+        _getMobileContext: async function () {
             // Read the key the server embedded in the redirect URL
             const urlParams = new URLSearchParams(window.location.search);
             const contextKey = urlParams.get('contextKey');
@@ -306,7 +306,7 @@ sap.ui.define([], function() {
             }
 
             const data = await response.json();
-            
+
             if (!data || !data.cloudId) {
                 return null;
             }
@@ -315,8 +315,8 @@ sap.ui.define([], function() {
 
             return {
                 source: CONTEXT_SOURCES.MOBILE,
-                objectType: objectType === 'ACTIVITY' ? OBJECT_TYPES.ACTIVITY : 
-                           objectType === 'SERVICECALL' ? OBJECT_TYPES.SERVICECALL : null,
+                objectType: objectType === 'ACTIVITY' ? OBJECT_TYPES.ACTIVITY :
+                    objectType === 'SERVICECALL' ? OBJECT_TYPES.SERVICECALL : null,
                 objectId: data.cloudId,
                 activityId: objectType === 'ACTIVITY' ? data.cloudId : null,
                 serviceCallId: objectType === 'SERVICECALL' ? data.cloudId : null,
@@ -332,7 +332,7 @@ sap.ui.define([], function() {
          * Uses fsm-shell SDK to communicate with FSM Shell host
          * @private
          */
-        _getShellContext: function() {
+        _getShellContext: function () {
             return new Promise((resolve, reject) => {
                 // Load Shell SDK dynamically
                 this._loadShellSdk()
@@ -349,7 +349,7 @@ sap.ui.define([], function() {
          * Load FSM Shell SDK dynamically
          * @private
          */
-        _loadShellSdk: function() {
+        _loadShellSdk: function () {
             return new Promise((resolve, reject) => {
                 if (_shellSdkLoaded && window.FSMShell) {
                     resolve();
@@ -367,13 +367,13 @@ sap.ui.define([], function() {
                 const script = document.createElement('script');
                 script.src = 'https://unpkg.com/fsm-shell@1.20.0/release/fsm-shell-client.js';
                 script.async = true;
-                
+
                 script.onload = () => {
                     _shellSdkLoaded = true;
                     console.log("ContextService: FSM Shell SDK loaded");
                     resolve();
                 };
-                
+
                 script.onerror = () => {
                     reject(new Error("Failed to load FSM Shell SDK"));
                 };
@@ -390,149 +390,72 @@ sap.ui.define([], function() {
         },
 
         /**
-         * Request context from FSM Shell
+         * Request context from FSM Shell.
+         *
+         * FSM Shell delivers the full context in a single REQUIRE_CONTEXT response,
+         * including the current ViewState (selected activity / service call). One
+         * event, one response — no separate ViewState messages on initial load.
+         *
+         * Note on onViewState: those listeners fire only on user-initiated ViewState
+         * changes after initial load, which this extension doesn't react to (a
+         * navigation triggers a new page load, not a live update). If that ever
+         * changes, register listeners after REQUIRE_CONTEXT has resolved.
+         *
          * @private
          */
-        _requestShellContext: function(resolve, reject) {
+        _requestShellContext: function (resolve, reject) {
             try {
                 const { ShellSdk, SHELL_EVENTS } = window.FSMShell;
-                
-                // Initialize SDK
                 _shellSdk = ShellSdk.init(parent, '*');
-                
-                // Set timeout for response
+
                 const timeout = setTimeout(() => {
                     reject(new Error("Shell context request timeout"));
                 }, 5000);
 
-                // Variables to collect context
-                let shellContext = {
+                const shellContext = {
                     source: CONTEXT_SOURCES.SHELL,
                     objectType: null,
                     objectId: null,
                     activityId: null,
                     serviceCallId: null
                 };
-                let contextReceived = false;
 
-                // Listen for context response
                 _shellSdk.on(SHELL_EVENTS.Version1.REQUIRE_CONTEXT, (event) => {
-                    try {
-                        const data = JSON.parse(event);
-                        console.log("ContextService: Raw shell context received:", data);
-                        
-                        // Store basic shell context
-                        shellContext.userId = data.userId;
-                        shellContext.userName = data.user;
-                        shellContext.companyId = data.companyId;
-                        shellContext.companyName = data.company;
-                        shellContext.accountId = data.accountId;
-                        shellContext.accountName = data.account;
-                        shellContext.cloudHost = data.cloudHost;
-                        shellContext.locale = data.selectedLocale;
-                        shellContext.authToken = data.auth ? data.auth.access_token : null;
-                        shellContext._rawShellContext = data;
+                    const data = JSON.parse(event);
+                    console.log("ContextService: Raw shell context received:", data);
 
-                        // Check for ViewState in initial context
-                        if (data.viewState) {
-                            console.log("ContextService: ViewState in context:", data.viewState);
-                            this._extractFromViewState(data.viewState, shellContext);
-                        }
-                        
-                        contextReceived = true;
-                        
-                        // If we have object ID from ViewState, resolve immediately!
-                        if (shellContext.objectId) {
-                            console.log("ContextService: Found objectId in initial context, resolving:", shellContext.objectId);
-                            clearTimeout(timeout);
-                            resolve(shellContext);
-                            return; // Don't wait for ViewState events
-                        }
-                    } catch (e) {
-                        console.error("ContextService: Error parsing context:", e);
+                    // Basic user / company / account info
+                    shellContext.userId = data.userId;
+                    shellContext.userName = data.user;
+                    shellContext.companyId = data.companyId;
+                    shellContext.companyName = data.company;
+                    shellContext.accountId = data.accountId;
+                    shellContext.accountName = data.account;
+                    shellContext.cloudHost = data.cloudHost;
+                    shellContext.locale = data.selectedLocale;
+                    shellContext.authToken = data.auth?.access_token || null;
+
+                    // Useful FSM metadata for diagnostics and UX
+                    shellContext.outletName = data.outlet?.name || null;
+                    shellContext.deploymentId = data.extension?.deploymentId || null;
+                    shellContext.themeId = data.selectedThemeId || null;
+
+                    // Keep the raw payload for advanced consumers
+                    shellContext._rawShellContext = data;
+
+                    // ViewState comes embedded in the REQUIRE_CONTEXT response
+                    if (data.viewState) {
+                        this._extractFromViewState(data.viewState, shellContext);
                     }
+
+                    clearTimeout(timeout);
+                    resolve(shellContext);
                 });
 
-                // Listen for ViewState updates - this is key for extensions!
-                // FSM Shell sends ViewState separately for 'activity' and 'serviceCall'
-                _shellSdk.onViewState('activity', (activity) => {
-                    console.log("ContextService: ViewState 'activity' received:", activity);
-                    if (activity && activity.id) {
-                        shellContext.activityId = activity.id;
-                        shellContext.objectId = activity.id;
-                        shellContext.objectType = OBJECT_TYPES.ACTIVITY;
-                        
-                        if (contextReceived) {
-                            clearTimeout(timeout);
-                            resolve(shellContext);
-                        }
-                    }
-                });
-
-                _shellSdk.onViewState('serviceCall', (serviceCall) => {
-                    console.log("ContextService: ViewState 'serviceCall' received:", serviceCall);
-                    if (serviceCall && serviceCall.id) {
-                        shellContext.serviceCallId = serviceCall.id;
-                        // Only set as primary object if no activity
-                        if (!shellContext.activityId) {
-                            shellContext.objectId = serviceCall.id;
-                            shellContext.objectType = OBJECT_TYPES.SERVICECALL;
-                        }
-                        
-                        if (contextReceived) {
-                            clearTimeout(timeout);
-                            resolve(shellContext);
-                        }
-                    }
-                });
-
-                // Also listen for ACTIVITY and SERVICECALL (uppercase) ViewState keys
-                _shellSdk.onViewState('ACTIVITY', (activity) => {
-                    console.log("ContextService: ViewState 'ACTIVITY' received:", activity);
-                    if (activity && activity.id) {
-                        shellContext.activityId = activity.id;
-                        shellContext.objectId = activity.id;
-                        shellContext.objectType = OBJECT_TYPES.ACTIVITY;
-                        
-                        if (contextReceived) {
-                            clearTimeout(timeout);
-                            resolve(shellContext);
-                        }
-                    }
-                });
-
-                _shellSdk.onViewState('SERVICECALL', (serviceCall) => {
-                    console.log("ContextService: ViewState 'SERVICECALL' received:", serviceCall);
-                    if (serviceCall && serviceCall.id) {
-                        shellContext.serviceCallId = serviceCall.id;
-                        if (!shellContext.activityId) {
-                            shellContext.objectId = serviceCall.id;
-                            shellContext.objectType = OBJECT_TYPES.SERVICECALL;
-                        }
-                        
-                        if (contextReceived) {
-                            clearTimeout(timeout);
-                            resolve(shellContext);
-                        }
-                    }
-                });
-
-                // Request context - this triggers both REQUIRE_CONTEXT response and ViewState events
                 _shellSdk.emit(SHELL_EVENTS.Version1.REQUIRE_CONTEXT, {
                     clientIdentifier: 'tm-reporting-extension',
-                    auth: {
-                        response_type: 'token'
-                    }
+                    auth: { response_type: 'token' }
                 });
-
-                // Fallback: if we get context but no ViewState after 3 seconds, resolve anyway
-                setTimeout(() => {
-                    if (contextReceived && !shellContext.objectId) {
-                        console.log("ContextService: No ViewState received, resolving with basic shell context");
-                        clearTimeout(timeout);
-                        resolve(shellContext);
-                    }
-                }, 3000);
 
             } catch (e) {
                 reject(new Error("Shell SDK init failed: " + e.message));
@@ -540,39 +463,38 @@ sap.ui.define([], function() {
         },
 
         /**
-         * Extract activity/serviceCall from ViewState object
-         * FSM Shell ViewState uses different property names:
-         * - activityID / selectedActivityId (not activity.id)
-         * - selectedServiceCallId (not serviceCall.id)
+         * Extract activityId / serviceCallId from the ViewState payload.
+         *
+         * Observed ViewState shape in FSM Web UI (Service Call Activity outlet):
+         *   {
+         *     activityID,                  primary key — capital ID
+         *     selectedActivityId,          duplicate of activityID
+         *     selectedServiceCallId,       service call key
+         *     selectedBusinessPartnerId,
+         *     selectedSidebar: { eventId, id: "ACTIVITY:<uuid>" },
+         *     simulationData: { ... }
+         *   }
+         *
          * @private
          */
-        _extractFromViewState: function(viewState, shellContext) {
+        _extractFromViewState: function (viewState, shellContext) {
             console.log("ContextService: Extracting from ViewState:", viewState);
-            
-            // FSM Shell uses these property names for the current selection
-            const activityId = viewState.activityID || 
-                              viewState.selectedActivityId || 
-                              viewState.activityId ||
-                              (viewState.activity && viewState.activity.id) ||
-                              (viewState.ACTIVITY && viewState.ACTIVITY.id);
-                              
-            const serviceCallId = viewState.selectedServiceCallId || 
-                                 viewState.serviceCallID ||
-                                 viewState.serviceCallId ||
-                                 (viewState.serviceCall && viewState.serviceCall.id) ||
-                                 (viewState.SERVICECALL && viewState.SERVICECALL.id);
+
+            // activityID is primary; selectedActivityId is a duplicate fallback
+            const activityId = viewState.activityID || viewState.selectedActivityId;
+            const serviceCallId = viewState.selectedServiceCallId;
 
             if (activityId) {
-                console.log("ContextService: Found activityId in ViewState:", activityId);
+                console.log("ContextService: Found activityId:", activityId);
                 shellContext.activityId = activityId;
                 shellContext.objectId = activityId;
                 shellContext.objectType = OBJECT_TYPES.ACTIVITY;
             }
-            
+
             if (serviceCallId) {
-                console.log("ContextService: Found serviceCallId in ViewState:", serviceCallId);
+                console.log("ContextService: Found serviceCallId:", serviceCallId);
                 shellContext.serviceCallId = serviceCallId;
-                // Only set as primary object if no activity
+                // Only promote to primary object if no activity was selected
                 if (!shellContext.activityId) {
                     shellContext.objectId = serviceCallId;
                     shellContext.objectType = OBJECT_TYPES.SERVICECALL;
@@ -584,7 +506,7 @@ sap.ui.define([], function() {
          * Get the Shell SDK instance (for advanced usage)
          * @returns {Object|null} ShellSdk instance or null
          */
-        getShellSdk: function() {
+        getShellSdk: function () {
             return _shellSdk;
         },
 
@@ -592,7 +514,7 @@ sap.ui.define([], function() {
          * Check if running in FSM Shell (Web UI)
          * @returns {boolean}
          */
-        isInShell: function() {
+        isInShell: function () {
             return _cachedContext && _cachedContext.source === CONTEXT_SOURCES.SHELL;
         },
 
@@ -600,26 +522,15 @@ sap.ui.define([], function() {
          * Check if running in FSM Mobile Web Container
          * @returns {boolean}
          */
-        isInMobile: function() {
+        isInMobile: function () {
             return _cachedContext && _cachedContext.source === CONTEXT_SOURCES.MOBILE;
         },
 
         /**
          * Clear cached context (for testing/reset)
          */
-        clearCache: function() {
+        clearCache: function () {
             _cachedContext = null;
-        },
-
-        /**
-         * Listen for ViewState changes (Shell only)
-         * @param {string} key - ViewState key to listen for
-         * @param {Function} callback - Callback function
-         */
-        onViewStateChange: function(key, callback) {
-            if (_shellSdk && window.FSMShell) {
-                _shellSdk.onViewState(key, callback);
-            }
         }
     };
 });
