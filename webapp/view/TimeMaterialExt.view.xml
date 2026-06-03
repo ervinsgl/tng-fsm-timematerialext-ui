@@ -1,5 +1,5 @@
 <mvc:View
-    controllerName="com.tng.fsm.timematerialext.app.controller.TimeMaterialExt"
+    controllerName="com.tns.fsm.timematerialext.app.controller.TimeMaterialExt"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
@@ -13,7 +13,7 @@
         2. Product Groups (activities grouped by product)
         
         Session context available via footer info button (ℹ️).
-        Controller: com.tng.fsm.timematerialext.app.controller.View1
+        Controller: com.tns.fsm.timematerialext.app.controller.View1
     -->
     <Page
         id="mobileAppServiceConfirmationPage"
@@ -33,7 +33,7 @@
             <layout:VerticalLayout id="mobileAppMainLayout" width="100%" class="sapUiContentPadding">
                 
                 <!-- Service Order Header -->
-                <core:Fragment fragmentName="com.tng.fsm.timematerialext.app.view.fragments.ServiceCall" type="XML"/>
+                <core:Fragment fragmentName="com.tns.fsm.timematerialext.app.view.fragments.ServiceCall" type="XML"/>
 
                 <!-- Activities by Product Group -->
                 <VBox id="productGroupsOuterContainer" visible="{view>/organizationSelected}" width="100%">
@@ -45,7 +45,7 @@
                     
                     <!-- Content -->
                     <VBox visible="{= !${view>/activitiesLoading} }">
-                        <core:Fragment fragmentName="com.tng.fsm.timematerialext.app.view.fragments.ProductGroups" type="XML"/>
+                        <core:Fragment fragmentName="com.tns.fsm.timematerialext.app.view.fragments.ProductGroups" type="XML"/>
                     </VBox>
                 </VBox>
                 

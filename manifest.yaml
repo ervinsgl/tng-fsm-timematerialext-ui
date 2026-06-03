@@ -1,5 +1,5 @@
 applications:
-  - name: tng-fsm-timematerialext-ui-dev
+  - name: tns-fsm-timematerialext-ui-dev
     memory: 512M
     disk_quota: 512M
     instances: 1
@@ -8,6 +8,6 @@ applications:
     command: npm start
     path: .
     routes:
-      - route: tng-fsm-timematerialext-ui-dev-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com
+      - route: tns-fsm-timematerialext-ui-dev-fsm-dev-op.cfapps.eu10-004.hana.ondemand.com
     services:
       - fsm-timematerialext-destination-dev

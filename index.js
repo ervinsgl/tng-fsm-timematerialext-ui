@@ -43,7 +43,7 @@ const FSM_WEBCONTAINER_AUTH_KEY = process.env.FSM_WEBCONTAINER_AUTH_KEY;
 
 if (!FSM_WEBCONTAINER_AUTH_KEY) {
     console.error('FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set.');
-    console.error('       Set it via: cf set-env tng-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY <value>');
+    console.error('       Set it via: cf set-env tns-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY <value>');
     process.exit(1);
 }
 

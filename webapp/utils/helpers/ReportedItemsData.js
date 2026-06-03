@@ -14,7 +14,7 @@
  * - POST /api/get-reported-items
  * 
  * @file ReportedItemsData.js
- * @module com/tng/fsm/timematerialext/app/utils/helpers/ReportedItemsData
+ * @module com/tns/fsm/timematerialext/app/utils/helpers/ReportedItemsData
  */
 sap.ui.define([], () => {
     "use strict";

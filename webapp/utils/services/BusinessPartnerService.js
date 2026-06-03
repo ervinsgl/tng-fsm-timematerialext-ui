@@ -16,7 +16,7 @@
  * - POST /api/get-business-partner-by-external-id
  * 
  * @file BusinessPartnerService.js
- * @module com/tng/fsm/timematerialext/app/utils/services/BusinessPartnerService
+ * @module com/tns/fsm/timematerialext/app/utils/services/BusinessPartnerService
  */
 sap.ui.define([], () => {
     "use strict";

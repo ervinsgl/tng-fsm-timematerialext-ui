@@ -15,7 +15,7 @@
  * Date Format: yyyy-MM-dd (e.g., "2025-11-28")
  * 
  * @file DateTimeService.js
- * @module com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService
+ * @module com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService
  */
 sap.ui.define([], () => {
     "use strict";

@@ -18,7 +18,7 @@
  *   });
  * 
  * @file ContextService.js
- * @module com/tng/fsm/timematerialext/app/utils/services/ContextService
+ * @module com/tns/fsm/timematerialext/app/utils/services/ContextService
  */
 sap.ui.define([], function () {
     "use strict";

@@ -72,8 +72,8 @@ use it as the password when prompted.
 
 ```bash
 cd ~/projects
-git clone https://github.com/ervinsgl/tng-fsm-timematerialext-ui.git
-cd tng-fsm-timematerialext-ui
+git clone https://github.com/ervinsgl/tns-fsm-timematerialext-ui.git
+cd tns-fsm-timematerialext-ui
 ```
 
 Verify you got the right code:
@@ -256,20 +256,20 @@ This is expected. The next step fixes it.
 Set the auth key from Step 4:
 
 ```bash
-cf set-env tng-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY '<value-from-step-4>'
+cf set-env tns-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY '<value-from-step-4>'
 ```
 
 Optionally, override the JWKS URL if the FSM tenant is in a non-DE region:
 
 ```bash
 # Default in code is DE region; only set this if needed
-cf set-env tng-fsm-timematerialext-ui-dev FSM_JWKS_URL 'https://<region>.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json'
+cf set-env tns-fsm-timematerialext-ui-dev FSM_JWKS_URL 'https://<region>.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json'
 ```
 
 Restage the app to pick up the env vars:
 
 ```bash
-cf restage tng-fsm-timematerialext-ui-dev
+cf restage tns-fsm-timematerialext-ui-dev
 ```
 
 Wait ~1-2 minutes for restaging.
@@ -277,7 +277,7 @@ Wait ~1-2 minutes for restaging.
 ## Step 9: Verify the app started correctly
 
 ```bash
-cf logs tng-fsm-timematerialext-ui-dev --recent
+cf logs tns-fsm-timematerialext-ui-dev --recent
 ```
 
 Look for these lines (should all appear within seconds of each other):
@@ -299,7 +299,7 @@ backend is healthy.
 Get the app's URL:
 
 ```bash
-cf app tng-fsm-timematerialext-ui-dev
+cf app tns-fsm-timematerialext-ui-dev
 ```
 
 Look for the `routes:` line. Copy the URL.
@@ -352,7 +352,7 @@ On a test device with FSM Mobile installed:
 While doing this, watch the logs:
 
 ```bash
-cf logs tng-fsm-timematerialext-ui-dev
+cf logs tns-fsm-timematerialext-ui-dev
 ```
 
 You should see (when the user taps the button):
@@ -430,7 +430,7 @@ Key field. Both must be byte-exactly identical.
 
 To diagnose:
 ```bash
-cf env tng-fsm-timematerialext-ui-dev | grep FSM_WEBCONTAINER_AUTH_KEY
+cf env tns-fsm-timematerialext-ui-dev | grep FSM_WEBCONTAINER_AUTH_KEY
 ```
 
 Compare the value with what's in FSM Admin → Web Containers → Authentication Key.
@@ -441,7 +441,7 @@ If different, set both sides to the same value and restage the app.
 Most likely the FSM Web UI Shell flow's JWT validation failed. Check logs:
 
 ```bash
-cf logs tng-fsm-timematerialext-ui-dev --recent | grep "SHELL-INIT"
+cf logs tns-fsm-timematerialext-ui-dev --recent | grep "SHELL-INIT"
 ```
 
 If you see `SHELL-INIT: rejected — JWT validation failed: ...`, the JWT
@@ -451,7 +451,7 @@ couldn't be verified. Possible causes:
 
 ### Browser console shows `Failed to load resource: ...mobileapptm/Component.js` or similar
 
-The app ID rename from `mobileapptm` to `com.tng.fsm.timematerialext.app` left
+The app ID rename from `mobileapptm` to `com.tns.fsm.timematerialext.app` left
 a stale reference. Verify with:
 
 ```bash
@@ -473,7 +473,7 @@ Customer's BTP admin can `cf delete mobileapptm -f` when ready.
 If the new deployment has problems and the old one still works:
 
 1. In FSM Admin, change the Web Container URL back to the old app's URL.
-2. (Optionally) `cf delete tng-fsm-timematerialext-ui-dev -f` to remove the
+2. (Optionally) `cf delete tns-fsm-timematerialext-ui-dev -f` to remove the
    new app entirely.
 
 The old app continues functioning since its env vars and service binding were
@@ -487,8 +487,8 @@ not touched.
 
 1. Generate a new value: `openssl rand -base64 32`
 2. Update FSM Admin → Web Containers → Authentication Key
-3. Update CF env var: `cf set-env tng-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY '<new-value>'`
-4. Restage: `cf restage tng-fsm-timematerialext-ui-dev`
+3. Update CF env var: `cf set-env tns-fsm-timematerialext-ui-dev FSM_WEBCONTAINER_AUTH_KEY '<new-value>'`
+4. Restage: `cf restage tns-fsm-timematerialext-ui-dev`
 
 In-flight Mobile launches return 401 during the brief window between the FSM
 update and CF restage. Users retap to relaunch. No long downtime.
@@ -512,7 +512,7 @@ For a new environment (e.g., test):
 
 1. Create the service binding: `cf create-service destination lite fsm-timematerialext-destination-test`
 2. Adjust `manifest.yaml` (or use a separate manifest file) to set the CF app
-   name to `tng-fsm-timematerialext-ui-test` and reference the new service binding
+   name to `tns-fsm-timematerialext-ui-test` and reference the new service binding
 3. Push, set env vars, restage as in Steps 7-9
 4. Configure a new FSM Web Container in FSM Admin pointing at the test app URL
 
@@ -525,5 +525,5 @@ environments — see [NAMING.md](NAMING.md) for the full pattern.
 
 - [SECURITY.md](SECURITY.md) — full security architecture (inbound auth, JWT
   validation, threat model, rotation)
-- [NAMING.md](NAMING.md) — naming conventions across TNG FSM extensions
+- [NAMING.md](NAMING.md) — naming conventions across tns FSM extensions
 - [README.md](../README.md) — app overview, features, API reference

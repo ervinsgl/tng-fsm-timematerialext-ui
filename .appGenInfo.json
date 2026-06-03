@@ -5,7 +5,7 @@
     "serviceType": "None",
     "metadataFilename": "",
     "serviceUrl": "N/A",
-    "appName": "com.tng.fsm.timematerialext.app",
+    "appName": "com.tns.fsm.timematerialext.app",
     "appTitle": "Mobile App in SAP FSM",
     "appDescription": "An SAP Fiori application. Mobile App in SAP FSM.",
     "appNamespace": "",

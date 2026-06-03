@@ -7,7 +7,7 @@ sap.ui.define([
 
 	Opa5.extendConfig({
 		arrangements: new Startup(),
-		viewNamespace: "com.tng.fsm.timematerialext.app.view.",
+		viewNamespace: "com.tns.fsm.timematerialext.app.view.",
 		autoWait: true
 	});
 });

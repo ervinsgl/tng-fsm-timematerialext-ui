@@ -18,11 +18,11 @@
  * - Mileage: Date, distance, source, destination, travel duration, remarks
  * 
  * @file TMEditService.js
- * @module com/tng/fsm/timematerialext/app/utils/tm/TMEditService
- * @requires com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService
+ * @module com/tns/fsm/timematerialext/app/utils/tm/TMEditService
+ * @requires com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService
  */
 sap.ui.define([
-    "com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService"
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService"
 ], (DateTimeService) => {
     "use strict";
 

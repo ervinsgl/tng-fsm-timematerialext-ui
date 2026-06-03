@@ -18,13 +18,13 @@
  * - Time & Material: Combined entry (material + up to 3 time entries)
  * 
  * @file TMCreationService.js
- * @module com/tng/fsm/timematerialext/app/utils/tm/TMCreationService
+ * @module com/tns/fsm/timematerialext/app/utils/tm/TMCreationService
  * @requires sap/m/MessageToast
- * @requires com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService
+ * @requires com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService
  */
 sap.ui.define([
     "sap/m/MessageToast",
-    "com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService"
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService"
 ], (MessageToast, DateTimeService) => {
     "use strict";
 
@@ -37,7 +37,7 @@ sap.ui.define([
          * @private
          */
         _getText(key, args) {
-            const oComponent = sap.ui.getCore().getComponent("container-com.tng.fsm.timematerialext.app");
+            const oComponent = sap.ui.getCore().getComponent("container-com.tns.fsm.timematerialext.app");
             if (oComponent) {
                 const oBundle = oComponent.getModel("i18n").getResourceBundle();
                 return oBundle.getText(key, args);

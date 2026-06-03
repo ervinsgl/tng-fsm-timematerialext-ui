@@ -1,4 +1,4 @@
-<mvc:View controllerName="com.tng.fsm.timematerialext.app.controller.App"
+<mvc:View controllerName="com.tns.fsm.timematerialext.app.controller.App"
     displayBlock="true"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m">

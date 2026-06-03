@@ -24,14 +24,14 @@
  * - onCreateTechnicianSuggestionSelect: Select technician from suggestions
  * 
  * @file TMExpenseMileageMixin.js
- * @module com/tng/fsm/timematerialext/app/controller/mixin/TMExpenseMileageMixin
+ * @module com/tns/fsm/timematerialext/app/controller/mixin/TMExpenseMileageMixin
  */
 sap.ui.define([
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMCreationService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMPayloadService",
-    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService"
+    "com/tns/fsm/timematerialext/app/utils/tm/TMCreationService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMPayloadService",
+    "com/tns/fsm/timematerialext/app/utils/services/TechnicianService"
 ], (MessageToast, MessageBox, TMCreationService, TMPayloadService, TechnicianService) => {
     "use strict";
 

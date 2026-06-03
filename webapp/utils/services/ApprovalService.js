@@ -22,7 +22,7 @@
  * - POST /api/get-approval-status
  * 
  * @file ApprovalService.js
- * @module com/tng/fsm/timematerialext/app/utils/services/ApprovalService
+ * @module com/tns/fsm/timematerialext/app/utils/services/ApprovalService
  */
 sap.ui.define([], () => {
     "use strict";

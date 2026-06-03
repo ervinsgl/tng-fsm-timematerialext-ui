@@ -17,19 +17,19 @@
  * - _showTimeAndMaterialConfirmation → _submitTimeAndMaterialToFSM
  * 
  * @file TMEditMixin.js
- * @module com/tng/fsm/timematerialext/app/controller/mixin/TMEditMixin
+ * @module com/tns/fsm/timematerialext/app/controller/mixin/TMEditMixin
  */
 sap.ui.define([
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMCreationService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMDataService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMPayloadService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMEditService",
-    "com/tng/fsm/timematerialext/app/utils/helpers/DateTimeService",
-    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService",
-    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
-    "com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService"
+    "com/tns/fsm/timematerialext/app/utils/tm/TMCreationService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMDataService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMPayloadService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMEditService",
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tns/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tns/fsm/timematerialext/app/utils/services/ExpenseTypeService"
 ], (MessageToast, MessageBox, TMCreationService, TMDataService, TMPayloadService, TMEditService, DateTimeService, TimeTaskService, ItemService, ExpenseTypeService) => {
     "use strict";
 

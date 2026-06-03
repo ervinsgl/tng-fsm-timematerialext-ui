@@ -1,5 +1,5 @@
 sap.ui.define([
-	"com/tng/fsm/timematerialext/app/test/unit/controller/View1.controller"
+	"com/tns/fsm/timematerialext/app/test/unit/controller/View1.controller"
 ], function () {
 	"use strict";
 });

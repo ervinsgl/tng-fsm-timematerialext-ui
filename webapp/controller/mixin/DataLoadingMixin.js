@@ -16,26 +16,26 @@
  * - ServiceCall: Goes directly to service call API (skips activity fetch)
  * 
  * @file DataLoadingMixin.js
- * @module com/tng/fsm/timematerialext/app/controller/mixin/DataLoadingMixin
+ * @module com/tns/fsm/timematerialext/app/controller/mixin/DataLoadingMixin
  */
 sap.ui.define([
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "com/tng/fsm/timematerialext/app/utils/services/OrganizationService",
-    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService",
-    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
-    "com/tng/fsm/timematerialext/app/utils/services/ExpenseTypeService",
-    "com/tng/fsm/timematerialext/app/utils/services/ActivityService",
-    "com/tng/fsm/timematerialext/app/utils/services/ServiceOrderService",
-    "com/tng/fsm/timematerialext/app/utils/services/PersonService",
-    "com/tng/fsm/timematerialext/app/utils/services/BusinessPartnerService",
-    "com/tng/fsm/timematerialext/app/utils/services/ApprovalService",
-    "com/tng/fsm/timematerialext/app/utils/services/UdfMetaService",
-    "com/tng/fsm/timematerialext/app/utils/services/TechnicianService",
-    "com/tng/fsm/timematerialext/app/utils/services/ContextService",
-    "com/tng/fsm/timematerialext/app/utils/helpers/URLHelper",
-    "com/tng/fsm/timematerialext/app/utils/helpers/ProductGroupService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMDataService"
+    "com/tns/fsm/timematerialext/app/utils/services/OrganizationService",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tns/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tns/fsm/timematerialext/app/utils/services/ExpenseTypeService",
+    "com/tns/fsm/timematerialext/app/utils/services/ActivityService",
+    "com/tns/fsm/timematerialext/app/utils/services/ServiceOrderService",
+    "com/tns/fsm/timematerialext/app/utils/services/PersonService",
+    "com/tns/fsm/timematerialext/app/utils/services/BusinessPartnerService",
+    "com/tns/fsm/timematerialext/app/utils/services/ApprovalService",
+    "com/tns/fsm/timematerialext/app/utils/services/UdfMetaService",
+    "com/tns/fsm/timematerialext/app/utils/services/TechnicianService",
+    "com/tns/fsm/timematerialext/app/utils/services/ContextService",
+    "com/tns/fsm/timematerialext/app/utils/helpers/URLHelper",
+    "com/tns/fsm/timematerialext/app/utils/helpers/ProductGroupService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMDataService"
 ], (MessageToast, MessageBox, OrganizationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, ServiceOrderService, PersonService, BusinessPartnerService, ApprovalService, UdfMetaService, TechnicianService, ContextService, URLHelper, ProductGroupService, TMDataService) => {
     "use strict";
 

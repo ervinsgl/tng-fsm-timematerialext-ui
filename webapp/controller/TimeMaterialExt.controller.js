@@ -6,7 +6,7 @@
  * resolution, activity loading, and T&M (Time & Materials) reporting.
  * 
  * @file View1.controller.js
- * @module com/tng/fsm/timematerialext/app/controller/View1
+ * @module com/tns/fsm/timematerialext/app/controller/View1
  * 
  * Initialization Flow:
  * 1. Load web container context (FSM Mobile sends userName, cloudId, etc.)
@@ -32,14 +32,14 @@ sap.ui.define([
     "sap/ui/core/Fragment",
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "com/tng/fsm/timematerialext/app/model/formatter",
-    "com/tng/fsm/timematerialext/app/utils/services/OrganizationService",
-    "com/tng/fsm/timematerialext/app/utils/services/PersonService",
-    "com/tng/fsm/timematerialext/app/utils/services/ItemService",
-    "com/tng/fsm/timematerialext/app/utils/services/UdfMetaService",
-    "com/tng/fsm/timematerialext/app/utils/services/TypeConfigService",
-    "com/tng/fsm/timematerialext/app/utils/services/CacheService",
-    "com/tng/fsm/timematerialext/app/utils/tm/TMDialogService",
+    "com/tns/fsm/timematerialext/app/model/formatter",
+    "com/tns/fsm/timematerialext/app/utils/services/OrganizationService",
+    "com/tns/fsm/timematerialext/app/utils/services/PersonService",
+    "com/tns/fsm/timematerialext/app/utils/services/ItemService",
+    "com/tns/fsm/timematerialext/app/utils/services/UdfMetaService",
+    "com/tns/fsm/timematerialext/app/utils/services/TypeConfigService",
+    "com/tns/fsm/timematerialext/app/utils/services/CacheService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMDialogService",
     "./mixin/DataLoadingMixin",
     "./mixin/TMDialogMixin",
     "./mixin/TMEditMixin",
@@ -55,7 +55,7 @@ sap.ui.define([
     /**
      * Merge all mixins with controller methods
      */
-    return Controller.extend("com.tng.fsm.timematerialext.app.controller.TimeMaterialExt", Object.assign({},
+    return Controller.extend("com.tns.fsm.timematerialext.app.controller.TimeMaterialExt", Object.assign({},
         DataLoadingMixin,
         TMDialogMixin,
         TMEditMixin,
@@ -534,7 +534,7 @@ sap.ui.define([
             async onShowContextInfo() {
                 if (!this._contextInfoDialog) {
                     this._contextInfoDialog = await Fragment.load({
-                        name: "com.tng.fsm.timematerialext.app.view.fragments.ContextInfoDialog",
+                        name: "com.tns.fsm.timematerialext.app.view.fragments.ContextInfoDialog",
                         controller: this
                     });
                     this.getView().addDependent(this._contextInfoDialog);
@@ -558,7 +558,7 @@ sap.ui.define([
             async onShowStatusLegend() {
                 if (!this._statusLegendDialog) {
                     this._statusLegendDialog = await Fragment.load({
-                        name: "com.tng.fsm.timematerialext.app.view.fragments.StatusLegendDialog",
+                        name: "com.tns.fsm.timematerialext.app.view.fragments.StatusLegendDialog",
                         controller: this
                     });
                     this.getView().addDependent(this._statusLegendDialog);
@@ -581,7 +581,7 @@ sap.ui.define([
             async onOpenTypeConfig() {
                 if (!this._typeConfigDialog) {
                     this._typeConfigDialog = await Fragment.load({
-                        name: "com.tng.fsm.timematerialext.app.view.fragments.TypeConfigDialog",
+                        name: "com.tns.fsm.timematerialext.app.view.fragments.TypeConfigDialog",
                         controller: this
                     });
                     this.getView().addDependent(this._typeConfigDialog);

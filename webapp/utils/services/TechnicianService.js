@@ -18,11 +18,11 @@
  * - Early termination when max results reached
  * 
  * @file TechnicianService.js
- * @module com/tng/fsm/timematerialext/app/utils/services/TechnicianService
- * @requires com/tng/fsm/timematerialext/app/utils/services/PersonService
+ * @module com/tns/fsm/timematerialext/app/utils/services/TechnicianService
+ * @requires com/tns/fsm/timematerialext/app/utils/services/PersonService
  */
 sap.ui.define([
-    "com/tng/fsm/timematerialext/app/utils/services/PersonService"
+    "com/tns/fsm/timematerialext/app/utils/services/PersonService"
 ], (PersonService) => {
     "use strict";
 

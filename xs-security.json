@@ -1,5 +1,5 @@
 {
-  "xsappname": "com.tng.fsm.timematerialext.app",
+  "xsappname": "com.tns.fsm.timematerialext.app",
   "tenant-mode": "dedicated",
   "description": "Security profile of called application",
   "scopes": [],

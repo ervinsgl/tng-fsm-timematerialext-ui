@@ -14,7 +14,7 @@
  * - Mileage: Z40000038, Z40000008
  * 
  * @file TypeConfigService.js
- * @module com/tng/fsm/timematerialext/app/utils/services/TypeConfigService
+ * @module com/tns/fsm/timematerialext/app/utils/services/TypeConfigService
  */
 sap.ui.define([], () => {
     "use strict";

@@ -17,13 +17,13 @@
  * - Mileage
  * 
  * @file TMDataService.js
- * @module com/tng/fsm/timematerialext/app/utils/tm/TMDataService
- * @requires com/tng/fsm/timematerialext/app/utils/helpers/ReportedItemsData
- * @requires com/tng/fsm/timematerialext/app/utils/services/TimeTaskService
+ * @module com/tns/fsm/timematerialext/app/utils/tm/TMDataService
+ * @requires com/tns/fsm/timematerialext/app/utils/helpers/ReportedItemsData
+ * @requires com/tns/fsm/timematerialext/app/utils/services/TimeTaskService
  */
 sap.ui.define([
-    "com/tng/fsm/timematerialext/app/utils/helpers/ReportedItemsData",
-    "com/tng/fsm/timematerialext/app/utils/services/TimeTaskService"
+    "com/tns/fsm/timematerialext/app/utils/helpers/ReportedItemsData",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService"
 ], (ReportedItemsData, TimeTaskService) => {
     "use strict";
 

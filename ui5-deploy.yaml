@@ -2,7 +2,7 @@
 
 specVersion: "3.1"
 metadata:
-  name: com.tng.fsm.timematerialext.app
+  name: com.tns.fsm.timematerialext.app
 type: application
 resources:
   configuration:
@@ -16,7 +16,7 @@ builder:
     - name: ui5-task-zipper
       afterTask: generateCachebusterInfo
       configuration:
-        archiveName: com.tng.fsm.timematerialext.app
+        archiveName: com.tns.fsm.timematerialext.app
         relativePaths: true
         additionalFiles:
           - xs-app.json
