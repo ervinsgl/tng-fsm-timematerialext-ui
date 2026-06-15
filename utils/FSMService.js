@@ -41,7 +41,7 @@ const TokenCache = require('./TokenCache');
 class FSMService {
     constructor() {
         // BTP destination name — change here to update all methods (including mixed-in modules)
-        this.destinationName = 'FSM_S4E';
+        this.destinationName = 'FSM_OAUTH_CONNECT';
     }
 
     /**

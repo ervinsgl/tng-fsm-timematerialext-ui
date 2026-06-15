@@ -421,7 +421,7 @@ module.exports = {
         try {
             if (!userId) return null;
 
-            const query = `SELECT w.orgLevel, w.orgLevelIds FROM Person w WHERE w.userName = '${userId}'`;
+            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds FROM Person w WHERE w.userName = '${userId}'`;
             const data = await this.makeQueryRequest(query, 'Person.25');
 
             if (!data.data || data.data.length === 0) {
@@ -431,7 +431,9 @@ module.exports = {
             const personData = data.data[0].w;
             return {
                 orgLevel: personData.orgLevel || null,
-                orgLevelIds: personData.orgLevelIds || null
+                orgLevelIds: personData.orgLevelIds || null,
+                personId: personData.id || null,
+                personExternalId: personData.externalId || null
             };
 
         } catch (error) {
@@ -465,7 +467,9 @@ module.exports = {
                 userFirstName: user.firstName,
                 userLastName: user.lastName,
                 orgLevel: orgLevelData.orgLevel,
-                orgLevelIds: orgLevelData.orgLevelIds
+                orgLevelIds: orgLevelData.orgLevelIds,
+                personIds: orgLevelData.personId ? [orgLevelData.personId] : [],
+                personExternalIds: orgLevelData.personExternalId ? [orgLevelData.personExternalId] : []
             };
 
         } catch (error) {
