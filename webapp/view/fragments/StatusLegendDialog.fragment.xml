@@ -36,7 +36,7 @@
                         </ColumnListItem>
                         <ColumnListItem>
                             <cells>
-                                <ObjectStatus text="REVIEW" state="Information"/>
+                                <ObjectStatus text="REVIEW" state="Error"/>
                                 <Text text="{i18n>statusLegendReviewDesc}" wrapping="true"/>
                             </cells>
                         </ColumnListItem>
@@ -54,7 +54,7 @@
                         </ColumnListItem>
                         <ColumnListItem>
                             <cells>
-                                <ObjectStatus text="{i18n>statusLegendRejectedLabel}" state="Error"/>
+                                <ObjectStatus text="{i18n>statusLegendRejectedLabel}" state="Information"/>
                                 <Text text="{i18n>statusLegendRejectedDesc}" wrapping="true"/>
                             </cells>
                         </ColumnListItem>

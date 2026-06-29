@@ -15,6 +15,8 @@
  * - PERSON/TECHNICIAN: Person queries by ID, externalId, BusinessPartner
  * - ORGANIZATION: Organization level hierarchy
  * - USER: User API lookup, combined user-org-level flow
+ *   (with UnifiedPerson fallback for accounts where Person.userName
+ *    stores the login name instead of the User API id)
  * 
  * @file FSMLookupService.js
  * @module utils/FSMLookupService
@@ -413,9 +415,20 @@ module.exports = {
     },
 
     /**
-     * Get Person's orgLevel by user ID.
+     * Get Person's orgLevel + identity by user ID.
+     *
+     * Selects id/externalId in addition to orgLevel so the activity
+     * assignment filter (responsible / supporting technician) can compare
+     * the user's person identity against each activity. Without these the
+     * assignment filter is skipped and all org-matched activities show.
+     *
+     * The same human can have multiple Person rows for one userName
+     * (e.g. EMPLOYEE + ERPUSER), each with its own id/externalId. An activity
+     * may be assigned against either row, so ALL identities are collected and
+     * returned as arrays; the assignment filter matches on any of them.
+     *
      * @param {string} userId - User ID from User API
-     * @returns {Promise<Object|null>} Object with orgLevel and orgLevelIds
+     * @returns {Promise<Object|null>} Object with orgLevel, orgLevelIds, personIds[], personExternalIds[]
      */
     async getPersonOrgLevelByUserId(userId) {
         try {
@@ -428,12 +441,21 @@ module.exports = {
                 return null;
             }
 
-            const personData = data.data[0].w;
+            // Collect every identity row for this userName, not just row 0.
+            const rows = data.data.map(r => r.w).filter(Boolean);
+
+            const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
+            const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
+
+            // orgLevel is shared across the duplicate rows; take the first
+            // populated one rather than assuming row 0 carries it.
+            const orgLevelRow = rows.find(r => r.orgLevel) || rows[0];
+
             return {
-                orgLevel: personData.orgLevel || null,
-                orgLevelIds: personData.orgLevelIds || null,
-                personId: personData.id || null,
-                personExternalId: personData.externalId || null
+                orgLevel: orgLevelRow.orgLevel || null,
+                orgLevelIds: orgLevelRow.orgLevelIds || null,
+                personIds,
+                personExternalIds
             };
 
         } catch (error) {
@@ -443,33 +465,122 @@ module.exports = {
     },
 
     /**
-     * Get User's Organization Level (combined flow).
-     * 1. Get user by username -> get user ID
-     * 2. Query Person table with user ID -> get orgLevel/orgLevelIds
-     * @param {string} username - Username from FSM Mobile context
-     * @returns {Promise<Object|null>} Object with orgLevel info
+     * Fallback: get Person's orgLevel + identity via UnifiedPerson by the raw context user value.
+     *
+     * Why this exists: Person.userName is supposed to contain the User API id
+     * (e.g. '605269'), but in some FSM accounts (observed in QA) it contains
+     * the login name instead (e.g. '61'). In those accounts the primary
+     * Person lookup by User API id finds nothing. UnifiedPerson queried with
+     * the raw context value resolves the same person and returns the same
+     * orgLevel + identity fields.
+     *
+     * Selects id/externalId here too so the assignment filter works on the
+     * fallback path as well, not only the primary path.
+     *
+     * @param {string} contextUserValue - User value exactly as delivered by FSM context
+     * @returns {Promise<Object|null>} Object with orgLevel, orgLevelIds, personIds[], personExternalIds[], or null
      */
-    async getUserOrgLevel(username) {
+    async getUnifiedPersonOrgLevel(contextUserValue) {
         try {
-            const user = await this.getUserByUsername(username);
-            if (!user || !user.id) {
+            if (!contextUserValue) return null;
+
+            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds FROM UnifiedPerson w WHERE w.userName = '${contextUserValue}'`;
+            const data = await this.makeQueryRequest(query, 'UnifiedPerson.13');
+
+            if (!data.data || data.data.length === 0) {
                 return null;
             }
 
-            const orgLevelData = await this.getPersonOrgLevelByUserId(user.id);
+            // Collect every identity row (EMPLOYEE + ERPUSER etc.), same as the
+            // primary Person path, so the assignment filter can match on any.
+            const rows = data.data.map(r => r.w).filter(Boolean);
+
+            const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
+            const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
+            const orgLevelRow = rows.find(r => r.orgLevel) || rows[0];
+
+            return {
+                orgLevel: orgLevelRow.orgLevel || null,
+                orgLevelIds: orgLevelRow.orgLevelIds || null,
+                personIds,
+                personExternalIds
+            };
+
+        } catch (error) {
+            // Fallback failure must not mask the primary path result —
+            // log and return null so getUserOrgLevel reports "not found" cleanly.
+            console.error('FSMService: UnifiedPerson orgLevel query Error:', error.response?.data || error.message);
+            return null;
+        }
+    },
+
+    /**
+     * Get User's Organization Level (combined flow with fallback).
+     *
+     * Primary path:
+     * 1. Resolve login name -> user id via User API
+     * 2. Query Person with that user id -> orgLevel/orgLevelIds + identity
+     *
+     * Fallback path (when primary finds nothing):
+     * 3. Query UnifiedPerson with the raw context value -> orgLevel/orgLevelIds + identity
+     *    Covers accounts where Person.userName stores the login name
+     *    instead of the User API id (environment data discrepancy).
+     *
+     * personIds / personExternalIds are returned as arrays so the activity
+     * assignment filter can match the user against each activity's
+     * responsible / supporting technicians.
+     *
+     * @param {string} username - User value from FSM context (login name or id)
+     * @returns {Promise<Object|null>} Object with orgLevel info + person identity, or null if unresolvable
+     */
+    async getUserOrgLevel(username) {
+        try {
+            if (!username) {
+                return null;
+            }
+
+            // Step 1: resolve via User API (non-fatal — fallback still runs if this fails)
+            let user = null;
+            try {
+                user = await this.getUserByUsername(username);
+            } catch (error) {
+                console.error('FSMService: User API lookup failed, continuing to fallback:', error.message);
+            }
+
+            // Step 2: primary — Person keyed by User API id
+            let orgLevelData = null;
+            let resolvedVia = null;
+            if (user && user.id) {
+                orgLevelData = await this.getPersonOrgLevelByUserId(user.id);
+                if (orgLevelData) {
+                    resolvedVia = 'Person (by User API id)';
+                }
+            }
+
+            // Step 3: fallback — UnifiedPerson keyed by raw context value
+            if (!orgLevelData) {
+                console.log(`FSMService: Person lookup empty for user '${username}', falling back to UnifiedPerson`);
+                orgLevelData = await this.getUnifiedPersonOrgLevel(username);
+                if (orgLevelData) {
+                    resolvedVia = 'UnifiedPerson (by context value)';
+                }
+            }
+
             if (!orgLevelData) {
                 return null;
             }
 
+            console.log(`FSMService: User org level resolved via ${resolvedVia} for '${username}'`);
+
             return {
-                userId: user.id,
+                userId: user?.id || username,
                 userName: username,
-                userFirstName: user.firstName,
-                userLastName: user.lastName,
+                userFirstName: user?.firstName || null,
+                userLastName: user?.lastName || null,
                 orgLevel: orgLevelData.orgLevel,
                 orgLevelIds: orgLevelData.orgLevelIds,
-                personIds: orgLevelData.personId ? [orgLevelData.personId] : [],
-                personExternalIds: orgLevelData.personExternalId ? [orgLevelData.personExternalId] : []
+                personIds: orgLevelData.personIds || [],
+                personExternalIds: orgLevelData.personExternalIds || []
             };
 
         } catch (error) {

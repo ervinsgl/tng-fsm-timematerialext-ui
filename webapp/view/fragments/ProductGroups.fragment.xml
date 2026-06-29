@@ -201,11 +201,11 @@
                                                                 <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColRemarks}"/></Column>
                                                             </columns>
                                                             <items>
-                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'DECLINED_CLOSED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
+                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
                                                                     <cells>
-                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'REVIEW'}"/>
+                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED_CLOSED'}"/>
                                                                         <core:Icon src="{= ${view>type} === 'Time Effort' ? 'sap-icon://time-entry-request' : 'sap-icon://product'}" color="{= ${view>type} === 'Time Effort' ? '#0854A0' : '#107E3E'}" tooltip="{view>type}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'CHANGE' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{= ${view>type} === 'Time Effort' ? ${view>taskDisplayText} : ${view>itemDisplayText}}" wrapping="false"/>
                                                                         <Text text="{view>createPersonDisplayText}" wrapping="false"/>
                                                                         <!-- Time: show StepInput for Time Effort (in hours), N/A for Material -->
@@ -273,10 +273,10 @@
                                                                 <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColRemarks}"/></Column>
                                                             </columns>
                                                             <items>
-                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'DECLINED_CLOSED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
+                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
                                                                     <cells>
-                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'REVIEW'}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED_CLOSED'}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'CHANGE' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{view>expenseTypeDisplayText}" wrapping="false"/>
                                                                         <Text text="{view>createPersonDisplayText}" wrapping="false"/>
                                                                         <Input value="{view>externalAmountValue}" type="Number" width="5rem" editable="{view>editMode}"/>
@@ -341,10 +341,10 @@
                                                                 <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColRemarks}"/></Column>
                                                             </columns>
                                                             <items>
-                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'DECLINED_CLOSED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
+                                                                <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
                                                                     <cells>
-                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'REVIEW'}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED_CLOSED'}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'CHANGE' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{view>mileageTypeDisplayText}"/>
                                                                         <Text text="{view>createPersonDisplayText}"/>
                                                                         <Input value="{view>distanceValue}" type="Number" width="100%" editable="{view>editMode}"/>

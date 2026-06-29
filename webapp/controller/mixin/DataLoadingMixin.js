@@ -236,7 +236,6 @@ sap.ui.define([
             
             // Only change if different
             if (langCode !== currentLangCode) {
-                console.log(`DataLoadingMixin: Setting language to '${langCode}' (from FSM context)`);
                 sap.ui.getCore().getConfiguration().setLanguage(langCode);
             }
         },
@@ -377,7 +376,8 @@ sap.ui.define([
                         const activityOrgLevelIds = activity.orgLevelIds || [];
                         return activityOrgLevelIds.some(activityOrgLevelId => {
                             const formattedActivityOrgLevelId = OrganizationService.formatOrgLevelId(activityOrgLevelId);
-                            return formattedActivityOrgLevelId === userOrgLevelId;
+                            const match = formattedActivityOrgLevelId === userOrgLevelId;
+                            return match;
                         });
                     });
 

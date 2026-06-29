@@ -11,11 +11,11 @@
  * 
  * Decision Status Values:
  * - PENDING: Awaiting decision
- * - REVIEW: Under review
+ * - REVIEW: Requires an additional review (locked, no editing)
  * - APPROVED: Approved
  * - DECLINED: Declined
  * - APPROVED_CLOSED: Approved and closed
- * - DECLINED_CLOSED: Declined and closed
+ * - DECLINED_CLOSED: Change requested (editable; displayed as CHANGE)
  * - CANCELLED: Cancelled
  * 
  * API Endpoint Used:
@@ -140,11 +140,11 @@ sap.ui.define([], () => {
 
             const statusTexts = {
                 'PENDING': 'Pending',
-                'REVIEW': 'Under Review',
+                'REVIEW': 'Review',
                 'APPROVED': 'Approved',
                 'DECLINED': 'Declined',
                 'APPROVED_CLOSED': 'Approved (Closed)',
-                'DECLINED_CLOSED': 'Declined (Closed)',
+                'DECLINED_CLOSED': 'Change',
                 'CANCELLED': 'Cancelled'
             };
 
@@ -163,11 +163,11 @@ sap.ui.define([], () => {
 
             const stateMap = {
                 'PENDING': 'Warning',
-                'REVIEW': 'Information',
+                'REVIEW': 'Error',
                 'APPROVED': 'Success',
                 'DECLINED': 'Error',
                 'APPROVED_CLOSED': 'Success',
-                'DECLINED_CLOSED': 'Error',
+                'DECLINED_CLOSED': 'Information',
                 'CANCELLED': 'None'
             };
 

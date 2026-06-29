@@ -467,25 +467,56 @@ sap.ui.define([], function () {
          *
          * Observed ViewState shape in FSM Web UI (Service Call Activity outlet):
          *   {
-         *     activityID,                  primary key — capital ID
-         *     selectedActivityId,          duplicate of activityID
-         *     selectedServiceCallId,       service call key
+         *     activityID,                  launch/context activity — CAN BE STALE
+         *     selectedActivityId,          LIVE selected activity (authoritative)
+         *     selectedServiceCallId,       LIVE selected service call (authoritative)
          *     selectedBusinessPartnerId,
          *     selectedSidebar: { eventId, id: "ACTIVITY:<uuid>" },
          *     simulationData: { ... }
          *   }
+         *
+         * IMPORTANT — field trust order (hard-won):
+         * `activityID` is a context/launch parameter that the shell seeds once and
+         * does NOT reliably refresh when the user changes selection within the same
+         * (cached/reused) extension instance. It can therefore lag behind the live
+         * selection and even point at an activity belonging to a DIFFERENT service
+         * call than `selectedServiceCallId`.
+         *
+         * `selectedActivityId` + `selectedServiceCallId` are the LIVE ViewState and
+         * always reflect what the user currently has open. We anchor on those.
+         * `activityID` is used only as a last-resort fallback, and only when it is
+         * consistent with the selected service call.
          *
          * @private
          */
         _extractFromViewState: function (viewState, shellContext) {
             console.log("ContextService: Extracting from ViewState:", viewState);
 
-            // activityID is primary; selectedActivityId is a duplicate fallback
-            const activityId = viewState.activityID || viewState.selectedActivityId;
-            const serviceCallId = viewState.selectedServiceCallId;
+            const selectedActivityId = viewState.selectedActivityId || null;
+            const launchActivityId = viewState.activityID || null;
+            const serviceCallId = viewState.selectedServiceCallId || null;
+
+            // DIAGNOSTIC: flag the shell handing us an out-of-sync activityID.
+            // When this fires, `activityID` (launch/context) disagrees with the
+            // live selection — the exact condition that caused the wrong service
+            // order to render. Kept as a warning so it's visible in the console
+            // without breaking anything.
+            if (launchActivityId && selectedActivityId &&
+                launchActivityId !== selectedActivityId) {
+                console.warn(
+                    "ContextService: ViewState activityID is STALE — " +
+                    "activityID (" + launchActivityId + ") != " +
+                    "selectedActivityId (" + selectedActivityId + "). " +
+                    "Using selectedActivityId. serviceCallId=" + serviceCallId
+                );
+            }
+
+            // Anchor on the LIVE selection; fall back to launch activityID only
+            // if there is no selected activity at all.
+            const activityId = selectedActivityId || launchActivityId;
 
             if (activityId) {
-                console.log("ContextService: Found activityId:", activityId);
+                console.log("ContextService: Using activityId:", activityId);
                 shellContext.activityId = activityId;
                 shellContext.objectId = activityId;
                 shellContext.objectType = OBJECT_TYPES.ACTIVITY;

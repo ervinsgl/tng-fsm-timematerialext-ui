@@ -856,7 +856,14 @@ sap.ui.define([
                     switch (report.type) {
                         case "Time Effort":
                             type = 'TimeEffort';
-                            const durationMinutes = report.durationMinutes || Math.round((report.durationHrs || 0) * 60);
+                            // durationHrs is what the StepInput binds/edits — it is the source of truth.
+                            // (report.durationMinutes is the stale original and must NOT take precedence.)
+                            const durationMinutes = Math.round((report.durationHrs || 0) * 60);
+                            // [VERIFY] Confirm StepInput's edited value propagated to the model row.
+                            // If durationHrs here != the value typed in the StepInput, aEditedReports is
+                            // reading a detached node and two-way binding is not writing back.
+                            console.log("[SaveAll/TimeEffort] id=%s durationHrs=%s -> durationMinutes=%s (stale durationMinutes=%s)",
+                                report.id, report.durationHrs, durationMinutes, report.durationMinutes);
                             payload = { ...report.fullData, remarks: report.remarksText || report.remarks };
                             if (payload.startDateTime) {
                                 const startDate = new Date(payload.startDateTime);
@@ -870,6 +877,8 @@ sap.ui.define([
                                 const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
                                 payload.endDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
                             }
+                            console.log("[SaveAll/TimeEffort] id=%s startDateTime=%s endDateTime=%s",
+                                report.id, payload.startDateTime, payload.endDateTime);
                             break;
                             
                         case "Material":
@@ -966,7 +975,7 @@ sap.ui.define([
 
         /**
          * Delete selected T&M entries.
-         * Entries with PENDING or REVIEW status can be deleted. REJECTED, DECLINED,
+         * Entries with PENDING or CHANGE (DECLINED_CLOSED) status can be deleted. REVIEW, DECLINED,
          * and APPROVED entries cannot be selected (no checkbox renders for them).
          * Shows confirmation dialog before deletion.
          * @param {sap.ui.base.Event} oEvent - Button press event
@@ -981,10 +990,10 @@ sap.ui.define([
             aProductGroups.forEach((group, groupIndex) => {
                 (group.activities || []).forEach((activity, activityIndex) => {
                     (activity.tmReports || []).forEach((report, reportIndex) => {
-                        // Include selected entries with PENDING or REVIEW status.
-                        // REJECTED/DECLINED/APPROVED entries don't render a checkbox (see view binding),
+                        // Include selected entries with PENDING or CHANGE (DECLINED_CLOSED) status.
+                        // REVIEW/DECLINED/APPROVED entries don't render a checkbox (see view binding),
                         // so they can't appear here even if the data model briefly says report.selected.
-                        if (report.selected && (report.decisionStatus === 'PENDING' || report.decisionStatus === 'REVIEW')) {
+                        if (report.selected && (report.decisionStatus === 'PENDING' || report.decisionStatus === 'DECLINED_CLOSED')) {
                             aSelectedEntries.push({
                                 report: report,
                                 path: `/productGroups/${groupIndex}/activities/${activityIndex}/tmReports/${reportIndex}`,
