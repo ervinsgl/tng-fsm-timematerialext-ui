@@ -14,8 +14,9 @@ sap.ui.define([
     "sap/ui/model/FilterOperator",
     "sap/ui/model/Sorter",
     "sap/ui/core/Fragment",
-    "sap/m/ViewSettingsItem"
-], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem) => {
+    "sap/m/ViewSettingsItem",
+    "com/tns/fsm/timematerialext/app/utils/services/ApprovalService"
+], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem, ApprovalService) => {
     "use strict";
 
     return {
@@ -941,13 +942,32 @@ sap.ui.define([
                 const result = await response.json();
                 
                 // Update UI based on results
+                const aSavedEntries = [];
                 if (result.results) {
                     result.results.forEach((res, index) => {
                         if (res.success && batchEntries[index]) {
                             oModel.setProperty(batchEntries[index]._path + "/editMode", false);
+                            aSavedEntries.push(batchEntries[index]);
                         }
                     });
                 }
+                
+                // Editing an entry resets its approval decision server-side (e.g. CHANGE -> PENDING).
+                // The batch-update response does NOT carry the new decisionStatus, so re-fetch it for
+                // each saved entry and apply it to the model in place — this updates the badge/lock
+                // state immediately, without forcing the user to press the manual Refresh button.
+                await Promise.all(aSavedEntries.map(async (entry) => {
+                    try {
+                        const sNewStatus = await ApprovalService.refreshStatusForEntry(entry.id);
+                        const sEffectiveStatus = sNewStatus || 'PENDING';
+                        oModel.setProperty(entry._path + "/decisionStatus", sEffectiveStatus);
+                        oModel.setProperty(entry._path + "/decisionStatusState", ApprovalService.getStatusState(sEffectiveStatus));
+                        oModel.setProperty(entry._path + "/decisionRemarks", ApprovalService.getRemarksById(entry.id) || '');
+                        oModel.setProperty(entry._path + "/selected", false);
+                    } catch (e) {
+                        console.error("Post-save status refresh failed for", entry.id, e);
+                    }
+                }));
                 
                 if (result.success) {
                     MessageToast.show(this._getText("msgEntriesSaved", [result.successCount]));
@@ -975,7 +995,7 @@ sap.ui.define([
 
         /**
          * Delete selected T&M entries.
-         * Entries with PENDING or CHANGE (DECLINED_CLOSED) status can be deleted. REVIEW, DECLINED,
+         * Entries with PENDING or CHANGE (DECLINED) status can be deleted. REVIEW, DECLINED_CLOSED,
          * and APPROVED entries cannot be selected (no checkbox renders for them).
          * Shows confirmation dialog before deletion.
          * @param {sap.ui.base.Event} oEvent - Button press event
@@ -990,10 +1010,10 @@ sap.ui.define([
             aProductGroups.forEach((group, groupIndex) => {
                 (group.activities || []).forEach((activity, activityIndex) => {
                     (activity.tmReports || []).forEach((report, reportIndex) => {
-                        // Include selected entries with PENDING or CHANGE (DECLINED_CLOSED) status.
-                        // REVIEW/DECLINED/APPROVED entries don't render a checkbox (see view binding),
+                        // Include selected entries with PENDING or CHANGE (DECLINED) status.
+                        // REVIEW/DECLINED_CLOSED/APPROVED entries don't render a checkbox (see view binding),
                         // so they can't appear here even if the data model briefly says report.selected.
-                        if (report.selected && (report.decisionStatus === 'PENDING' || report.decisionStatus === 'DECLINED_CLOSED')) {
+                        if (report.selected && (report.decisionStatus === 'PENDING' || report.decisionStatus === 'DECLINED')) {
                             aSelectedEntries.push({
                                 report: report,
                                 path: `/productGroups/${groupIndex}/activities/${activityIndex}/tmReports/${reportIndex}`,

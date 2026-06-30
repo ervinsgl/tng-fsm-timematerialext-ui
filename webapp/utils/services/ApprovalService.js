@@ -13,9 +13,9 @@
  * - PENDING: Awaiting decision
  * - REVIEW: Requires an additional review (locked, no editing)
  * - APPROVED: Approved
- * - DECLINED: Declined
+ * - DECLINED: Change requested (editable; displayed as CHANGE)
  * - APPROVED_CLOSED: Approved and closed
- * - DECLINED_CLOSED: Change requested (editable; displayed as CHANGE)
+ * - DECLINED_CLOSED: Declined/rejected (locked; displayed as DECLINED)
  * - CANCELLED: Cancelled
  * 
  * API Endpoint Used:
@@ -142,9 +142,9 @@ sap.ui.define([], () => {
                 'PENDING': 'Pending',
                 'REVIEW': 'Review',
                 'APPROVED': 'Approved',
-                'DECLINED': 'Declined',
+                'DECLINED': 'Change',
                 'APPROVED_CLOSED': 'Approved (Closed)',
-                'DECLINED_CLOSED': 'Change',
+                'DECLINED_CLOSED': 'Declined',
                 'CANCELLED': 'Cancelled'
             };
 
@@ -165,9 +165,9 @@ sap.ui.define([], () => {
                 'PENDING': 'Warning',
                 'REVIEW': 'Error',
                 'APPROVED': 'Success',
-                'DECLINED': 'Error',
+                'DECLINED': 'Information',
                 'APPROVED_CLOSED': 'Success',
-                'DECLINED_CLOSED': 'Information',
+                'DECLINED_CLOSED': 'Error',
                 'CANCELLED': 'None'
             };
 

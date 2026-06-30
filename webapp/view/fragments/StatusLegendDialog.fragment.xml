@@ -48,14 +48,14 @@
                         </ColumnListItem>
                         <ColumnListItem>
                             <cells>
-                                <ObjectStatus text="DECLINED" state="Error"/>
-                                <Text text="{i18n>statusLegendDeclinedDesc}" wrapping="true"/>
+                                <ObjectStatus text="CHANGE" state="Information"/>
+                                <Text text="{i18n>statusLegendChangeDesc}" wrapping="true"/>
                             </cells>
                         </ColumnListItem>
                         <ColumnListItem>
                             <cells>
-                                <ObjectStatus text="{i18n>statusLegendRejectedLabel}" state="Information"/>
-                                <Text text="{i18n>statusLegendRejectedDesc}" wrapping="true"/>
+                                <ObjectStatus text="DECLINED" state="Error"/>
+                                <Text text="{i18n>statusLegendDeclinedDesc}" wrapping="true"/>
                             </cells>
                         </ColumnListItem>
                         <ColumnListItem>
