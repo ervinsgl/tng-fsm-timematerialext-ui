@@ -675,13 +675,6 @@ class FSMService {
             const queryUrl = `${baseUrl}/api/query/v1`;
             const { account, company } = this._getAccountCompany(destination);
 
-            const queryParams = {
-                query: query,
-                dtos: dtos,
-                account,
-                company
-            };
-
             const headers = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
@@ -691,12 +684,62 @@ class FSMService {
                 'X-Client-Version': destination.destinationConfiguration['URL.headers.X-Client-Version']
             };
 
-            const response = await axios.get(queryUrl, {
-                params: queryParams,
-                headers: headers
-            });
+            // FSM Query API paginates. The default pageSize is 100, so without an
+            // explicit pageSize a query returning >100 rows was silently truncated
+            // to the first page. We request pageSize=1000 (the FSM max) and, as a
+            // safety net for the rare case of >1000 rows, page through all pages
+            // and concatenate the data arrays.
+            const PAGE_SIZE = 1000;
+            const MAX_PAGES = 50; // hard cap to avoid runaway loops (50k rows)
 
-            return response.data;
+            let page = 1;
+            let lastPage = 1;
+            let firstResponse = null;
+            const allData = [];
+
+            do {
+                const queryParams = {
+                    query: query,
+                    dtos: dtos,
+                    account,
+                    company,
+                    pageSize: PAGE_SIZE,
+                    page: page
+                };
+
+                const response = await axios.get(queryUrl, {
+                    params: queryParams,
+                    headers: headers
+                });
+
+                const body = response.data || {};
+                if (!firstResponse) {
+                    firstResponse = body;
+                }
+
+                if (Array.isArray(body.data)) {
+                    allData.push(...body.data);
+                }
+
+                lastPage = typeof body.lastPage === 'number' ? body.lastPage : page;
+
+                if (body.truncated) {
+                    console.warn(`FSMService: Query result truncated by FSM (dtos=${dtos}, totalObjectCount=${body.totalObjectCount}). Not all rows retrieved.`);
+                }
+
+                page++;
+            } while (page <= lastPage && page <= MAX_PAGES);
+
+            if (lastPage > MAX_PAGES) {
+                console.warn(`FSMService: Query has ${lastPage} pages, capped at ${MAX_PAGES} (dtos=${dtos}). Not all rows retrieved.`);
+            }
+
+            // Return the shape callers already expect (they read .data), preserving
+            // the pagination metadata from the first page for reference.
+            return {
+                ...firstResponse,
+                data: allData
+            };
 
         } catch (error) {
             console.error('FSMService: Query API Error:', error.response?.data || error.message);

@@ -305,42 +305,128 @@ sap.ui.define([
                     return;
                 }
                 
-                // Single batch request for all entries
-                const response = await fetch('/api/v1/batch-create', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ entries: batchEntries, transactional: false })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    MessageToast.show(this._getText("msgEntriesCreated", [result.successCount]));
-                    
-                    // Clear all arrays
+                // Chunk the batch so no single request exceeds body-size limits
+                // (Express body-parser, approuter, CF router, corporate proxy).
+                // Chunks are sent sequentially; a failed chunk does NOT abort the
+                // rest — we attempt all chunks and report failures at the end.
+                const CHUNK_SIZE = 50;
+                let totalSuccess = 0;
+                let totalError = 0;
+                const failedEntries = []; // { globalIndex, type, reason }
+
+                for (let chunkStart = 0; chunkStart < batchEntries.length; chunkStart += CHUNK_SIZE) {
+                    const chunk = batchEntries.slice(chunkStart, chunkStart + CHUNK_SIZE);
+
+                    let result;
+                    try {
+                        const response = await fetch('/api/v1/batch-create', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ entries: chunk, transactional: false })
+                        });
+
+                        // Guard: server/proxy may return non-JSON (e.g. HTML 413/502).
+                        // Blindly calling response.json() on HTML throws the confusing
+                        // "Unexpected token '<'" error. Detect and handle explicitly.
+                        const contentType = response.headers.get("content-type") || "";
+                        const isJson = contentType.indexOf("application/json") !== -1;
+
+                        if (!response.ok || !isJson) {
+                            // Whole chunk failed at transport level — no per-entry detail available.
+                            const reason = response.status === 413
+                                ? this._getText("msgBatchTooLarge")
+                                : (response.status + " " + response.statusText);
+                            for (let i = 0; i < chunk.length; i++) {
+                                totalError++;
+                                failedEntries.push({
+                                    globalIndex: chunkStart + i,
+                                    type: chunk[i].type,
+                                    reason
+                                });
+                            }
+                            console.error("Batch chunk failed:", response.status, response.statusText, "isJson:", isJson);
+                            continue; // attempt remaining chunks
+                        }
+
+                        result = await response.json();
+                    } catch (chunkError) {
+                        // Network error / JSON parse failure for this chunk — record and continue.
+                        console.error("Batch chunk error:", chunkError);
+                        for (let i = 0; i < chunk.length; i++) {
+                            totalError++;
+                            failedEntries.push({
+                                globalIndex: chunkStart + i,
+                                type: chunk[i].type,
+                                reason: chunkError.message
+                            });
+                        }
+                        continue;
+                    }
+
+                    // Handler returned JSON. Aggregate counts.
+                    totalSuccess += result.successCount || 0;
+                    totalError += result.errorCount || 0;
+
+                    // Map per-entry failures back to global index via contentId (reqN, 1-based,
+                    // restarts per chunk). results[] order is not guaranteed — key on contentId.
+                    if (result.errorCount > 0 && Array.isArray(result.results)) {
+                        result.results.forEach(r => {
+                            if (r.success) return;
+                            let localIndex = -1;
+                            if (r.contentId) {
+                                const m = String(r.contentId).match(/(\d+)/);
+                                if (m) localIndex = parseInt(m[1], 10) - 1;
+                            }
+                            const globalIndex = localIndex >= 0 ? chunkStart + localIndex : chunkStart;
+                            const entry = chunk[localIndex >= 0 ? localIndex : 0];
+                            const reason = (r.data && (r.data.message || r.data.error)) || ("HTTP " + r.status);
+                            failedEntries.push({
+                                globalIndex,
+                                type: entry ? entry.type : "?",
+                                reason
+                            });
+                        });
+                    }
+                }
+
+                // Refresh reports if anything at all was created
+                if (totalSuccess > 0 && activityId) {
+                    await this._refreshTMReportsAfterCreate(activityId);
+                }
+
+                if (totalError === 0) {
+                    // Full success — clear arrays and close dialog
+                    MessageToast.show(this._getText("msgEntriesCreated", [totalSuccess]));
                     oModel.setProperty("/materialEntries", []);
                     oModel.setProperty("/timeEntriesAZ", []);
                     oModel.setProperty("/timeEntriesFZ", []);
                     oModel.setProperty("/timeEntriesWZ", []);
-                    
-                    // Close the creation dialog
                     if (this._tmCreateDialog) {
                         this._tmCreateDialog.close();
                     }
-                    
-                    // Refresh T&M reports in main view
-                    if (activityId) {
-                        await this._refreshTMReportsAfterCreate(activityId);
-                    }
-                } else if (result.successCount > 0) {
-                    MessageBox.warning(this._getText("msgPartialSuccess", [result.successCount, result.errorCount]));
-                    if (activityId) {
-                        await this._refreshTMReportsAfterCreate(activityId);
-                    }
                 } else {
-                    MessageBox.error(this._getText("msgBatchCreateFailed"));
+                    // Partial or total failure — keep dialog open so the user can retry.
+                    // Build a readable list of what failed (cap to avoid a giant dialog).
+                    const MAX_LISTED = 15;
+                    const lines = failedEntries.slice(0, MAX_LISTED).map(f =>
+                        `#${f.globalIndex + 1} (${f.type}): ${f.reason}`
+                    );
+                    if (failedEntries.length > MAX_LISTED) {
+                        lines.push(this._getText("msgAndMoreFailures", [failedEntries.length - MAX_LISTED]));
+                    }
+                    const detail = lines.join('\n');
+
+                    if (totalSuccess > 0) {
+                        MessageBox.warning(
+                            this._getText("msgPartialSuccess", [totalSuccess, totalError]) + "\n\n" + detail
+                        );
+                    } else {
+                        MessageBox.error(
+                            this._getText("msgBatchCreateFailed") + "\n\n" + detail
+                        );
+                    }
                 }
-                
+
             } catch (error) {
                 console.error("Error creating T&M entries:", error);
                 MessageBox.error(this._getText("msgError", [error.message]));

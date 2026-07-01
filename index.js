@@ -197,7 +197,7 @@ app.use((req, res, next) => {
     res.removeHeader('X-Frame-Options');
     next();
 });
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.enable('trust proxy');

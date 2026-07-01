@@ -1503,6 +1503,22 @@ cf logs com.tns.fsm.timematerialext.app --recent
 | Web UI extension works first time, then 401s after some idle | Session token expired (30 min TTL) or container restarted (in-memory `sessionStore` cleared) | Refresh the iframe; the Shell SDK will re-issue a JWT and the app will re-establish a session. |
 | `class` assertion error in console | UI5 debug mode warning | Can be ignored — cosmetic only, doesn't affect functionality |
 
+### Batch Size & Pagination Handling
+
+Large T&M operations (bulk create, edit, delete, and read-back) are chunked and paginated so they stay within transport-layer body-size limits and FSM Query API page limits. This prevents both `413 (Content Too Large)` failures on save and silent row truncation on read.
+
+| Concern | Behavior | Location |
+|---------|----------|----------|
+| **Batch create** | Entries are split into chunks of **50** and sent sequentially. A failed chunk does **not** abort the rest — all chunks are attempted, and failures are reported at the end with per-entry detail (mapped via `contentId`, not array position). | `TMSaveMixin.js` → `_submitCreateTMEntries()` |
+| **Batch update** | Same chunking (50) and continue-on-failure behavior. Edit-mode is cleared only on rows that actually saved, mapped via `contentId` — safe even when FSM returns results out of order. | `TMTableMixin.js` → `onSaveAllTM()` |
+| **Batch delete** | Chunked at **100** (delete payloads are ID-only, so more fit per request). CA-27 (concurrent modification) retry with refreshed `lastChanged` is applied per chunk, keyed on entry `id`. | `TMTableMixin.js` → `_executeDeleteSelectedTM()` |
+| **Read-back (all reads)** | `makeQueryRequest` requests `pageSize=1000` (FSM max) and pages through all results, concatenating each page's `data[]`. Without this, FSM's default page size of 100 silently truncated any activity with 100+ reported items — producing incorrect tables, counts, and AZ/FZ/WZ totals with no error. | `FSMService.js` → `makeQueryRequest()` |
+| **Multi-activity load** | Activities are loaded in chunks of 10 via `Promise.allSettled` with throttling; each activity read benefits from the pagination fix above. | `DataLoadingMixin.js` → `_batchLoadWithEnrichment()` |
+
+**Non-JSON error handling:** All batch calls check response status and `content-type` before parsing. If a proxy or the body-parser returns an HTML error page (e.g. a 413), the app surfaces a clean message (`msgBatchTooLarge`) instead of crashing with `Unexpected token '<', "<!DOCTYPE"... is not valid JSON`.
+
+**If chunks still 413:** the limit is upstream (approuter / CF router / corporate proxy), not the Node body-parser. Lower `CHUNK_SIZE` in the relevant mixin. The backend `express.json({ limit })` in `index.js` is a modest backstop (`1mb`) and does not need to be raised once chunking is in place.
+
 ### Debug Console Logs
 
 The app logs detailed information to browser console:

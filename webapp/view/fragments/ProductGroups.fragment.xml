@@ -197,6 +197,10 @@
                                                             items="{path: 'view>tmReports', templateShareable: false, filters: [{ path: 'type', operator: 'NE', value1: 'Expense' }, { path: 'type', operator: 'NE', value1: 'Mileage' }], sorter: { path: 'sortDate', descending: true }}"
                                                             class="tmMTable"
                                                             width="auto"
+                                                            growing="true"
+                                                            growingThreshold="100"
+                                                            growingScrollToLoad="false"
+                                                            growingTriggerText="{i18n>tmShowMore}"
                                                         >
                                                             <columns>
                                                                 <Column width="3rem" hAlign="Begin"><Text text=""/></Column>
@@ -271,6 +275,10 @@
                                                             items="{path: 'view>tmReports', templateShareable: false, filters: [{ path: 'type', operator: 'EQ', value1: 'Expense' }], sorter: { path: 'sortDate', descending: true }}"
                                                             class="tmMTable"
                                                             width="auto"
+                                                            growing="true"
+                                                            growingThreshold="100"
+                                                            growingScrollToLoad="false"
+                                                            growingTriggerText="{i18n>tmShowMore}"
                                                         >
                                                             <columns>
                                                                 <Column width="3rem" hAlign="Begin"><Text text=""/></Column>
@@ -338,6 +346,10 @@
                                                             items="{path: 'view>tmReports', templateShareable: false, filters: [{ path: 'type', operator: 'EQ', value1: 'Mileage' }], sorter: { path: 'sortDate', descending: true }}"
                                                             class="tmMTable"
                                                             width="auto"
+                                                            growing="true"
+                                                            growingThreshold="100"
+                                                            growingScrollToLoad="false"
+                                                            growingTriggerText="{i18n>tmShowMore}"
                                                         >
                                                             <columns>
                                                                 <Column width="3rem" hAlign="Begin"><Text text=""/></Column>

@@ -929,29 +929,81 @@ sap.ui.define([
                     return;
                 }
                 
-                // Single batch request for all updates
-                const response = await fetch('/api/v1/batch-update', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        entries: batchEntries.map(e => ({ type: e.type, id: e.id, payload: e.payload })),
-                        transactional: false 
-                    })
-                });
-                
-                const result = await response.json();
-                
-                // Update UI based on results
-                const aSavedEntries = [];
-                if (result.results) {
-                    result.results.forEach((res, index) => {
-                        if (res.success && batchEntries[index]) {
-                            oModel.setProperty(batchEntries[index]._path + "/editMode", false);
-                            aSavedEntries.push(batchEntries[index]);
+                // Chunk the batch so no single request exceeds body-size limits.
+                // Sent sequentially; a failed chunk does NOT abort the rest.
+                const CHUNK_SIZE = 50;
+                let totalSuccess = 0;
+                let totalError = 0;
+                const failedEntries = [];   // { globalIndex, type, reason }
+                const aSavedEntries = [];    // entries that saved OK (for badge refresh below)
+
+                for (let chunkStart = 0; chunkStart < batchEntries.length; chunkStart += CHUNK_SIZE) {
+                    const chunk = batchEntries.slice(chunkStart, chunkStart + CHUNK_SIZE);
+
+                    let result;
+                    try {
+                        const response = await fetch('/api/v1/batch-update', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                entries: chunk.map(e => ({ type: e.type, id: e.id, payload: e.payload })),
+                                transactional: false
+                            })
+                        });
+
+                        // Guard: server/proxy may return non-JSON (e.g. HTML 413/502).
+                        const contentType = response.headers.get("content-type") || "";
+                        const isJson = contentType.indexOf("application/json") !== -1;
+
+                        if (!response.ok || !isJson) {
+                            const reason = response.status === 413
+                                ? this._getText("msgBatchTooLarge")
+                                : (response.status + " " + response.statusText);
+                            for (let i = 0; i < chunk.length; i++) {
+                                totalError++;
+                                failedEntries.push({ globalIndex: chunkStart + i, type: chunk[i].type, reason });
+                            }
+                            console.error("Batch-update chunk failed:", response.status, response.statusText, "isJson:", isJson);
+                            continue;
                         }
-                    });
+
+                        result = await response.json();
+                    } catch (chunkError) {
+                        console.error("Batch-update chunk error:", chunkError);
+                        for (let i = 0; i < chunk.length; i++) {
+                            totalError++;
+                            failedEntries.push({ globalIndex: chunkStart + i, type: chunk[i].type, reason: chunkError.message });
+                        }
+                        continue;
+                    }
+
+                    totalSuccess += result.successCount || 0;
+                    totalError += result.errorCount || 0;
+
+                    // Map results back to the correct entry via contentId (reqN, 1-based,
+                    // restarts per chunk). results[] order is NOT guaranteed — never use
+                    // array position. Clear editMode only on rows that actually saved,
+                    // and collect them for the badge/status refresh below.
+                    if (Array.isArray(result.results)) {
+                        result.results.forEach(res => {
+                            let localIndex = -1;
+                            if (res.contentId) {
+                                const m = String(res.contentId).match(/(\d+)/);
+                                if (m) localIndex = parseInt(m[1], 10) - 1;
+                            }
+                            const entry = localIndex >= 0 ? chunk[localIndex] : null;
+                            if (!entry) return;
+                            if (res.success) {
+                                oModel.setProperty(entry._path + "/editMode", false);
+                                aSavedEntries.push(entry);
+                            } else {
+                                const reason = (res.data && (res.data.message || res.data.error)) || ("HTTP " + res.status);
+                                failedEntries.push({ globalIndex: chunkStart + localIndex, type: entry.type, reason });
+                            }
+                        });
+                    }
                 }
-                
+
                 // Editing an entry resets its approval decision server-side (e.g. CHANGE -> PENDING).
                 // The batch-update response does NOT carry the new decisionStatus, so re-fetch it for
                 // each saved entry and apply it to the model in place — this updates the badge/lock
@@ -968,17 +1020,28 @@ sap.ui.define([
                         console.error("Post-save status refresh failed for", entry.id, e);
                     }
                 }));
-                
-                if (result.success) {
-                    MessageToast.show(this._getText("msgEntriesSaved", [result.successCount]));
+
+                if (totalError === 0) {
+                    MessageToast.show(this._getText("msgEntriesSaved", [totalSuccess]));
                     // Clear activity-level edit mode based on table type
                     if (sActivityPath && sEditModeProp) {
                         oModel.setProperty(sActivityPath + "/" + sEditModeProp, false);
                     }
-                } else if (result.successCount > 0) {
-                    MessageBox.warning(this._getText("msgPartialSaveSuccess", [result.successCount, result.errorCount]));
                 } else {
-                    MessageBox.error(this._getText("msgBatchUpdateFailed"));
+                    const MAX_LISTED = 15;
+                    const lines = failedEntries.slice(0, MAX_LISTED).map(f =>
+                        `#${f.globalIndex + 1} (${f.type}): ${f.reason}`
+                    );
+                    if (failedEntries.length > MAX_LISTED) {
+                        lines.push(this._getText("msgAndMoreFailures", [failedEntries.length - MAX_LISTED]));
+                    }
+                    const detail = lines.join('\n');
+
+                    if (totalSuccess > 0) {
+                        MessageBox.warning(this._getText("msgPartialSaveSuccess", [totalSuccess, totalError]) + "\n\n" + detail);
+                    } else {
+                        MessageBox.error(this._getText("msgBatchUpdateFailed") + "\n\n" + detail);
+                    }
                 }
                 
             } catch (error) {
@@ -1083,40 +1146,81 @@ sap.ui.define([
                     };
                 });
                 
-                // Call batch delete API
-                let response = await fetch('/api/v1/batch-delete', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ entries, transactional: false })
-                });
-                
-                let result = await response.json();
-                
-                // Handle CA-27 (concurrent modification) errors by retrying with updated lastChanged
-                if (!result.success && result.results) {
-                    const ca27Errors = result.results.filter(r => !r.success && r.data?.error === 'CA-27');
-                    if (ca27Errors.length > 0) {
-                        console.log("CA-27 detected, retrying with updated lastChanged values");
-                        
-                        // Update entries with correct lastChanged from error response
-                        ca27Errors.forEach(err => {
-                            const entryIndex = entries.findIndex(e => e.id === err.data?.values?.[2]);
-                            if (entryIndex >= 0 && err.data?.values?.[0]) {
-                                entries[entryIndex].lastChanged = err.data.values[0];
+                // Guarded fetch helper: returns parsed JSON, or throws a clear error
+                // if the server/proxy returned non-JSON (e.g. HTML 413/502).
+                const postBatchDelete = async (payloadEntries) => {
+                    const response = await fetch('/api/v1/batch-delete', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ entries: payloadEntries, transactional: false })
+                    });
+                    const contentType = response.headers.get("content-type") || "";
+                    const isJson = contentType.indexOf("application/json") !== -1;
+                    if (!response.ok || !isJson) {
+                        const reason = response.status === 413
+                            ? this._getText("msgBatchTooLarge")
+                            : (response.status + " " + response.statusText);
+                        const err = new Error(reason);
+                        err.isTransport = true;
+                        throw err;
+                    }
+                    return response.json();
+                };
+
+                // Chunk the initial delete so large selections stay under body limits.
+                // Aggregate results across chunks; a failed chunk does not abort the rest.
+                const DELETE_CHUNK_SIZE = 100;
+                let aggregatedResults = [];
+                let totalSuccess = 0;
+                let totalError = 0;
+
+                for (let ci = 0; ci < entries.length; ci += DELETE_CHUNK_SIZE) {
+                    const chunk = entries.slice(ci, ci + DELETE_CHUNK_SIZE);
+                    try {
+                        const chunkResult = await postBatchDelete(chunk);
+                        totalSuccess += chunkResult.successCount || 0;
+                        totalError += chunkResult.errorCount || 0;
+                        if (Array.isArray(chunkResult.results)) {
+                            aggregatedResults = aggregatedResults.concat(chunkResult.results);
+                        }
+
+                        // Handle CA-27 (concurrent modification) within this chunk by
+                        // retrying with updated lastChanged. Keyed on entry id, not position.
+                        const ca27Errors = (chunkResult.results || []).filter(r => !r.success && r.data?.error === 'CA-27');
+                        if (ca27Errors.length > 0) {
+                            console.log("CA-27 detected, retrying with updated lastChanged values");
+                            ca27Errors.forEach(err => {
+                                const entryIndex = chunk.findIndex(e => e.id === err.data?.values?.[2]);
+                                if (entryIndex >= 0 && err.data?.values?.[0]) {
+                                    chunk[entryIndex].lastChanged = err.data.values[0];
+                                }
+                            });
+                            const retryEntries = ca27Errors
+                                .map(err => chunk.find(e => e.id === err.data?.values?.[2]))
+                                .filter(Boolean);
+                            if (retryEntries.length > 0) {
+                                try {
+                                    const retryResult = await postBatchDelete(retryEntries);
+                                    totalSuccess += retryResult.successCount || 0;
+                                    totalError -= (retryResult.successCount || 0); // previously counted as errors
+                                } catch (retryErr) {
+                                    console.error("CA-27 retry failed:", retryErr);
+                                }
                             }
-                        });
-                        
-                        // Retry the delete
-                        response = await fetch('/api/v1/batch-delete', {
-                            method: 'DELETE',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ entries, transactional: false })
-                        });
-                        
-                        result = await response.json();
+                        }
+                    } catch (chunkErr) {
+                        console.error("Batch-delete chunk failed:", chunkErr);
+                        totalError += chunk.length;
                     }
                 }
-                
+
+                const result = {
+                    success: totalError === 0 && totalSuccess > 0,
+                    successCount: totalSuccess,
+                    errorCount: totalError,
+                    results: aggregatedResults
+                };
+
                 if (result.success) {
                     MessageToast.show(this._getText("msgEntriesDeleted", [result.successCount]));
                     
