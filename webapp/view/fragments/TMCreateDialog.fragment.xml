@@ -289,7 +289,7 @@
                                         <Column width="2.5rem" hAlign="Center"><Text text=""/></Column>
                                         <Column width="11rem" hAlign="Begin"><Text text="{i18n>createTMColItem}"/></Column>
                                         <Column width="11rem" hAlign="Begin"><Text text="{i18n>tmColTechnician}"/></Column>
-                                        <Column width="7rem" hAlign="Begin"><Text text="{i18n>tmColQty}"/></Column>
+                                        <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColQty}"/></Column>
                                         <Column width="4rem" hAlign="Begin"><Text text=""/></Column>
                                         <Column width="8rem" hAlign="Begin"><Text text="{i18n>tmColDate}"/></Column>
                                         <Column width="10rem" hAlign="Begin"><Text text="{i18n>tmColRemarks}"/></Column>
@@ -309,16 +309,20 @@
                                                 >
                                                     <core:Item key="{createTM>id}" text="{createTM>displayText}"/>
                                                 </Select>
-                                                <StepInput 
-                                                    value="{createTM>quantity}" 
-                                                    min="0" 
-                                                    step="1" 
-                                                    displayValuePrecision="2" 
-                                                    width="100%"
-                                                    change=".onMaterialQuantityChange"
-                                                    valueState="{createTM>quantityState}"
-                                                    valueStateText="{i18n>createTMQtyExceeds}"
-                                                />
+                                                <HBox alignItems="Center" class="tmQuantityStepper">
+                                                    <Button icon="sap-icon://less" press=".onQuantityStepDown" tooltip="-1"/>
+                                                    <Input 
+                                                        value="{createTM>quantity}" 
+                                                        type="Text"
+                                                        textAlign="Center"
+                                                        width="3rem"
+                                                        class="sapUiTinyMarginBegin sapUiTinyMarginEnd"
+                                                        liveChange=".onQuantityInputLiveChange"
+                                                        valueState="{createTM>quantityState}"
+                                                        valueStateText="{i18n>createTMQtyExceeds}"
+                                                    />
+                                                    <Button icon="sap-icon://add" press=".onQuantityStepUp" tooltip="+1"/>
+                                                </HBox>
                                                 <Text text="{path: 'createTM>/remainingMaterialQty', formatter: '.formatter.formatRemainingQty'}"/>
                                                 <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{createTM>/todayDate}"/>
                                                 <Input value="{createTM>remarks}" placeholder="{i18n>createTMRemarksPlaceholder}" width="100%"/>
@@ -373,8 +377,7 @@
                                         <Column width="2rem" hAlign="Center"><Text text=""/></Column>
                                         <Column width="8rem" hAlign="Begin"><Text text="{i18n>createTMColTask}"/></Column>
                                         <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColTechnician}"/></Column>
-                                        <Column width="7rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
-                                        <Column width="2.5rem" hAlign="Begin"><Text text=""/></Column>
+                                        <Column width="20rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>tmColDate}"/></Column>
                                         <Column width="2rem" hAlign="Center"><core:Icon src="sap-icon://restart" size="1rem" color="#0854a0"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>createTMColEndDate}"/></Column>
@@ -414,8 +417,16 @@
                                                         <core:Item key="{createTM>id}" text="{createTM>displayText}"/>
                                                     </suggestionItems>
                                                 </MultiInput>
-                                                <StepInput value="{createTM>durationHrs}" min="0" step="0.25" displayValuePrecision="2" width="100%"/>
-                                                <Text text="{i18n>activityHoursUnit}"/>
+                                                <HBox alignItems="Center" class="tmDurationHM" wrap="NoWrap">
+                                                    <Button icon="sap-icon://less" press=".onDurationHoursStepDown" tooltip="-1 h"/>
+                                                    <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
+                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                </HBox>
                                                 <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
                                                 <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
                                                 <DatePicker 
@@ -480,8 +491,7 @@
                                         <Column width="2rem" hAlign="Center"><Text text=""/></Column>
                                         <Column width="8rem" hAlign="Begin"><Text text="{i18n>createTMColTask}"/></Column>
                                         <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColTechnician}"/></Column>
-                                        <Column width="7rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
-                                        <Column width="2.5rem" hAlign="Begin"><Text text=""/></Column>
+                                        <Column width="20rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>tmColDate}"/></Column>
                                         <Column width="2rem" hAlign="Center"><core:Icon src="sap-icon://restart" size="1rem" color="#E9730C"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>createTMColEndDate}"/></Column>
@@ -521,8 +531,16 @@
                                                         <core:Item key="{createTM>id}" text="{createTM>displayText}"/>
                                                     </suggestionItems>
                                                 </MultiInput>
-                                                <StepInput value="{createTM>durationHrs}" min="0" step="0.25" displayValuePrecision="2" width="100%"/>
-                                                <Text text="{i18n>activityHoursUnit}"/>
+                                                <HBox alignItems="Center" class="tmDurationHM" wrap="NoWrap">
+                                                    <Button icon="sap-icon://less" press=".onDurationHoursStepDown" tooltip="-1 h"/>
+                                                    <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
+                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                </HBox>
                                                 <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
                                                 <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
                                                 <DatePicker 
@@ -587,8 +605,7 @@
                                         <Column width="2rem" hAlign="Center"><Text text=""/></Column>
                                         <Column width="8rem" hAlign="Begin"><Text text="{i18n>createTMColTask}"/></Column>
                                         <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColTechnician}"/></Column>
-                                        <Column width="7rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
-                                        <Column width="2.5rem" hAlign="Begin"><Text text=""/></Column>
+                                        <Column width="20rem" hAlign="Begin"><Text text="{i18n>activityDuration}"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>tmColDate}"/></Column>
                                         <Column width="2rem" hAlign="Center"><core:Icon src="sap-icon://restart" size="1rem" color="#BB0000"/></Column>
                                         <Column width="7rem" hAlign="Begin"><Text text="{i18n>createTMColEndDate}"/></Column>
@@ -628,8 +645,16 @@
                                                         <core:Item key="{createTM>id}" text="{createTM>displayText}"/>
                                                     </suggestionItems>
                                                 </MultiInput>
-                                                <StepInput value="{createTM>durationHrs}" min="0" step="0.25" displayValuePrecision="2" width="100%"/>
-                                                <Text text="{i18n>activityHoursUnit}"/>
+                                                <HBox alignItems="Center" class="tmDurationHM" wrap="NoWrap">
+                                                    <Button icon="sap-icon://less" press=".onDurationHoursStepDown" tooltip="-1 h"/>
+                                                    <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
+                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                </HBox>
                                                 <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
                                                 <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
                                                 <DatePicker 

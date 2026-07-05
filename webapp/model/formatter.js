@@ -18,8 +18,9 @@
  * @module com/tns/fsm/timematerialext/app/model/formatter
  */
 sap.ui.define([
-    "com/tns/fsm/timematerialext/app/utils/services/TypeConfigService"
-], (TypeConfigService) => {
+    "com/tns/fsm/timematerialext/app/utils/services/TypeConfigService",
+    "sap/ui/core/format/NumberFormat"
+], (TypeConfigService, NumberFormat) => {
     "use strict";
 
     return {
@@ -242,6 +243,43 @@ sap.ui.define([
                 }
             } catch (e) { /* fallback */ }
             return `of ${qty || 0} pcs`;
+        },
+
+        /**
+         * Whole-hours part of a duration for the hours stepper display.
+         * e.g. durationHrs = 2.5  ->  "2"
+         * @param {number|string} hrs total duration in hours
+         * @returns {string} integer hours as a string
+         */
+        formatDurationHoursPart: function(hrs) {
+            const n = parseFloat(hrs);
+            const v = isNaN(n) ? 0 : n;
+            return String(Math.floor(v));
+        },
+
+        /**
+         * Fractional (quarter-hour) part of a duration for the fraction stepper
+         * display, shown in the user's locale. e.g. durationHrs = 2.5 -> "0,50".
+         * Snaps to the nearest 0.25 so display is always one of 0,00/0,25/0,50/0,75.
+         * @param {number|string} hrs total duration in hours
+         * @returns {string} localized 2-decimal fraction string
+         */
+        formatDurationFractionPart: function(hrs) {
+            const n = parseFloat(hrs);
+            const v = isNaN(n) ? 0 : n;
+            let frac = v - Math.floor(v);
+            frac = Math.round(frac * 4) / 4; // snap to 0 / 0.25 / 0.5 / 0.75
+            if (frac >= 1) frac = 0;
+            try {
+                const oFmt = NumberFormat.getFloatInstance({
+                    minFractionDigits: 2,
+                    maxFractionDigits: 2,
+                    groupingEnabled: false
+                });
+                return oFmt.format(frac);
+            } catch (e) {
+                return frac.toFixed(2);
+            }
         },
 
         /**

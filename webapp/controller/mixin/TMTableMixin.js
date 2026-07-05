@@ -884,7 +884,7 @@ sap.ui.define([
                             
                         case "Material":
                             type = 'Material';
-                            payload = { ...report.fullData, quantity: report.quantity, remarks: report.remarksText || report.remarks };
+                            payload = { ...report.fullData, quantity: parseFloat(report.quantity) || 0, remarks: report.remarksText || report.remarks };
                             if (entryDate) {
                                 payload.date = entryDate;
                             }
@@ -895,18 +895,18 @@ sap.ui.define([
                             type = 'Expense';
                             payload = {
                                 ...report.fullData,
-                                externalAmount: { amount: report.externalAmountValue, currency: report.currency || 'EUR' },
-                                internalAmount: { amount: report.internalAmountValue, currency: report.currency || 'EUR' },
+                                externalAmount: { amount: parseFloat(report.externalAmountValue) || 0, currency: report.currency || 'EUR' },
+                                internalAmount: { amount: parseFloat(report.internalAmountValue) || 0, currency: report.currency || 'EUR' },
                                 remarks: report.remarksText || report.remarks
                             };
                             break;
                             
                         case "Mileage":
                             type = 'Mileage';
-                            payload = { ...report.fullData, distance: report.distanceValue, remarks: report.remarksText || report.remarks };
+                            payload = { ...report.fullData, distance: parseFloat(report.distanceValue) || 0, remarks: report.remarksText || report.remarks };
                             if (payload.travelStartDateTime) {
                                 const startDate = new Date(payload.travelStartDateTime);
-                                const endDate = new Date(startDate.getTime() + (report.travelDurationMinutes || 0) * 60 * 1000);
+                                const endDate = new Date(startDate.getTime() + (parseFloat(report.travelDurationMinutes) || 0) * 60 * 1000);
                                 payload.travelEndDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
                             }
                             break;

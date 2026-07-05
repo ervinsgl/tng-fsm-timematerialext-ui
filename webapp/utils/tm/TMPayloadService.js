@@ -194,7 +194,7 @@ sap.ui.define([
                 inactive: false,
                 orgLevel: orgLevelId || "",
                 date: materialDate,
-                quantity: oEntry.quantity || 0,
+                quantity: parseFloat(oEntry.quantity) || 0,
                 createPerson: this._buildCreatePerson(oEntry.technicianId, oEntry.technicianExternalId),
                 item: itemExternalId ? { externalId: itemExternalId } : null,
                 remarks: oEntry.remarks || "",
@@ -231,11 +231,11 @@ sap.ui.define([
                 orgLevel: orgLevelId || "",
                 date: expenseDate,
                 externalAmount: {
-                    amount: oEntry.externalAmountValue || 0,
+                    amount: parseFloat(oEntry.externalAmountValue) || 0,
                     currency: "EUR"
                 },
                 internalAmount: {
-                    amount: oEntry.internalAmountValue || 0,
+                    amount: parseFloat(oEntry.internalAmountValue) || 0,
                     currency: "EUR"
                 },
                 createPerson: this._buildCreatePerson(oEntry.technicianId, oEntry.technicianExternalId),
@@ -279,7 +279,7 @@ sap.ui.define([
             
             // Calculate travel end time: start + duration
             const startDate = new Date(baseStartDateTime);
-            const endDate = new Date(startDate.getTime() + (oEntry.travelDuration || 0) * 60 * 1000);
+            const endDate = new Date(startDate.getTime() + (parseFloat(oEntry.travelDuration) || 0) * 60 * 1000);
             
             const formatDateTime = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
             
@@ -290,7 +290,7 @@ sap.ui.define([
                 date: userDate,
                 orgLevel: orgLevelId || "",
                 distanceUnit: "KM",
-                distance: oEntry.distance || 0,
+                distance: parseFloat(oEntry.distance) || 0,
                 destination: "",
                 source: "",
                 type: null,

@@ -89,7 +89,7 @@ sap.ui.define([
                 technicianSuggestions: initialSuggestions,
                 taskCode: "",
                 taskDisplay: "",
-                durationHrs: 0.5,
+                durationHrs: 0,
                 entryDate: defaultDate,
                 repeatEnabled: false,
                 repeatEndDate: "",
@@ -279,7 +279,10 @@ sap.ui.define([
             
             oModel.setProperty(sPath + "/selectedTechnicians", aSelectedTechnicians);
             oMultiInput.setValue("");
-            oModel.refresh(true);
+            // Rebuild suggestions from the full technician pool (responsible +
+            // supporting) minus the now-selected, so removed technicians reappear.
+            this._rebuildTechnicianSuggestions(oModel, sPath);
+            this._refreshTechnicianInput(oMultiInput);
         },
 
         onTimeEntryTechnicianTokenUpdate(oEvent) {
@@ -298,8 +301,152 @@ sap.ui.define([
                 aSelectedTechnicians = aSelectedTechnicians.filter(t => !aRemovedIds.includes(t.id));
                 
                 oModel.setProperty(sPath + "/selectedTechnicians", aSelectedTechnicians);
-                oModel.refresh(true);
+                // Rebuild suggestions so the just-removed technician (incl. the
+                // responsible person) becomes selectable again.
+                this._rebuildTechnicianSuggestions(oModel, sPath);
+                this._refreshTechnicianInput(oEvent.getSource());
             }
+        },
+
+        /**
+         * Rebuild a time entry's technician suggestion list from the full activity
+         * technician pool (responsible + supporting), excluding the currently
+         * selected technicians. Mirrors the liveChange filter but with no search
+         * term, so it restores the complete available list after add/remove.
+         *
+         * @param {sap.ui.model.json.JSONModel} oModel the createTM model
+         * @param {string} sPath binding path of the time entry row
+         * @private
+         */
+        /* ========================================
+         * DURATION: HOURS + FRACTION STEPPERS
+         * durationHrs = wholeHours + fraction(0/0.25/0.5/0.75)
+         * All handlers adjust the plain numeric model value (no text parsing of
+         * decimals), so they are immune to comma/dot locale issues.
+         * ======================================== */
+
+        /**
+         * Resolve the createTM binding context + current durationHrs for a row.
+         * @private
+         */
+        _getDurationContext(oEvent) {
+            const oSource = oEvent.getSource();
+            const oContext = oSource.getBindingContext("createTM");
+            if (!oContext) return null;
+            const oModel = oContext.getModel();
+            const sPath = oContext.getPath();
+            const fTotal = parseFloat(oModel.getProperty(sPath + "/durationHrs")) || 0;
+            const iHours = Math.floor(fTotal);
+            let fFrac = fTotal - iHours;
+            fFrac = Math.round(fFrac * 4) / 4;
+            if (fFrac >= 1) fFrac = 0;
+            return { oSource, oModel, sPath, fTotal, iHours, fFrac };
+        },
+
+        /** Increase whole hours by 1 (fraction unchanged). */
+        onDurationHoursStepUp(oEvent) {
+            const c = this._getDurationContext(oEvent);
+            if (!c) return;
+            c.oModel.setProperty(c.sPath + "/durationHrs", (c.iHours + 1) + c.fFrac);
+        },
+
+        /** Decrease whole hours by 1, clamped so total stays >= 0. */
+        onDurationHoursStepDown(oEvent) {
+            const c = this._getDurationContext(oEvent);
+            if (!c) return;
+            let iNextHours = c.iHours - 1;
+            if (iNextHours < 0) iNextHours = 0;
+            c.oModel.setProperty(c.sPath + "/durationHrs", iNextHours + c.fFrac);
+        },
+
+        /**
+         * Keep the hours input a whole number as the user types: strip any
+         * non-digit character so no decimal separator reaches the model.
+         * Recombines with the existing fraction.
+         */
+        onDurationHoursLiveChange(oEvent) {
+            const oInput = oEvent.getSource();
+            const sValue = oEvent.getParameter("value") || "";
+            const sClean = sValue.replace(/[^0-9]/g, "");
+            if (sClean !== sValue) oInput.setValue(sClean);
+
+            const oContext = oInput.getBindingContext("createTM");
+            if (!oContext) return;
+            const oModel = oContext.getModel();
+            const sPath = oContext.getPath();
+            const fTotal = parseFloat(oModel.getProperty(sPath + "/durationHrs")) || 0;
+            let fFrac = fTotal - Math.floor(fTotal);
+            fFrac = Math.round(fFrac * 4) / 4;
+            if (fFrac >= 1) fFrac = 0;
+            const iHours = parseInt(sClean, 10) || 0;
+            oModel.setProperty(sPath + "/durationHrs", iHours + fFrac);
+        },
+
+        /**
+         * Step the fraction up one quarter (0 -> 0.25 -> 0.5 -> 0.75 -> wrap to 0
+         * and carry +1 hour, like a clock).
+         */
+        onDurationFractionStepUp(oEvent) {
+            const c = this._getDurationContext(oEvent);
+            if (!c) return;
+            let fFrac = c.fFrac + 0.25;
+            let iHours = c.iHours;
+            if (fFrac >= 1) { fFrac = 0; iHours += 1; }
+            c.oModel.setProperty(c.sPath + "/durationHrs", iHours + fFrac);
+        },
+
+        /**
+         * Step the fraction down one quarter (0.75 -> 0.5 -> 0.25 -> 0 -> wrap to
+         * 0.75 and borrow -1 hour). Clamped so total never goes below 0.
+         */
+        onDurationFractionStepDown(oEvent) {
+            const c = this._getDurationContext(oEvent);
+            if (!c) return;
+            let fFrac = c.fFrac - 0.25;
+            let iHours = c.iHours;
+            if (fFrac < 0) {
+                if (iHours > 0) { fFrac = 0.75; iHours -= 1; }
+                else { fFrac = 0; } // already at 0 total, stay
+            }
+            c.oModel.setProperty(c.sPath + "/durationHrs", iHours + fFrac);
+        },
+
+        _rebuildTechnicianSuggestions(oModel, sPath) {
+            const aActivityTechnicians = oModel.getProperty("/activityTechnicians") || [];
+            const aSelected = oModel.getProperty(sPath + "/selectedTechnicians") || [];
+            const selectedIds = new Set(aSelected.map(t => t.id));
+            const aSuggestions = aActivityTechnicians.filter(t => !selectedIds.has(t.id));
+            oModel.setProperty(sPath + "/technicianSuggestions", aSuggestions);
+        },
+
+        /**
+         * Refresh a technician MultiInput's own bindings (tokens, suggestionItems,
+         * valueState) WITHOUT a model-wide refresh.
+         *
+         * Why: oModel.refresh(true) forces every control bound to the model to
+         * re-render, including the duration StepInput. Under a comma-decimal
+         * locale, that re-render triggers a StepInput reformat bug that shifts
+         * the decimal (0,75 -> 75,25 -> ...). Refreshing only this control's
+         * bindings updates the technician tokens and suggestion list while
+         * leaving the StepInput untouched.
+         *
+         * @param {sap.m.MultiInput} oMultiInput the technician input control
+         * @private
+         */
+        _refreshTechnicianInput(oMultiInput) {
+            if (!oMultiInput) return;
+            try {
+                const oTokensBinding = oMultiInput.getBinding("tokens");
+                if (oTokensBinding) oTokensBinding.refresh(true);
+            } catch (e) { /* no tokens binding */ }
+            try {
+                const oSuggBinding = oMultiInput.getBinding("suggestionItems");
+                if (oSuggBinding) oSuggBinding.refresh(true);
+            } catch (e) { /* no suggestions binding */ }
+            try {
+                const oVsBinding = oMultiInput.getBinding("valueState");
+                if (oVsBinding && oVsBinding.checkUpdate) oVsBinding.checkUpdate(true);
+            } catch (e) { /* no valueState binding */ }
         },
 
         /* ========================================

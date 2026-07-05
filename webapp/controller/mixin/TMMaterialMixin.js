@@ -171,6 +171,72 @@ sap.ui.define([
             }, 0);
         },
 
+        /* ========================================
+         * QUANTITY STEPPER (custom +/- control)
+         * ======================================== */
+
+        /**
+         * Increase a material entry's quantity by one whole unit.
+         * Adjusts the plain model number directly (no text parsing), so it is
+         * locale-safe. Quantities are whole numbers only.
+         * @param {sap.ui.base.Event} oEvent press event from the + button
+         */
+        onQuantityStepUp(oEvent) {
+            this._stepQuantity(oEvent, 1);
+        },
+
+        /**
+         * Decrease a material entry's quantity by one whole unit, clamped at 0.
+         * @param {sap.ui.base.Event} oEvent press event from the - button
+         */
+        onQuantityStepDown(oEvent) {
+            this._stepQuantity(oEvent, -1);
+        },
+
+        /**
+         * Shared quantity stepper: adjust the pressed row's quantity by iDelta,
+         * clamped to >= 0 and kept a whole integer, then re-validate.
+         * @param {sap.ui.base.Event} oEvent the button press event
+         * @param {number} iDelta step delta (e.g. +1 or -1)
+         * @private
+         */
+        _stepQuantity(oEvent, iDelta) {
+            const oContext = oEvent.getSource().getBindingContext("createTM");
+            if (!oContext) return;
+            const oModel = oContext.getModel();
+            const sPath = oContext.getPath();
+
+            const iCurrent = parseInt(oModel.getProperty(sPath + "/quantity"), 10) || 0;
+            let iNext = iCurrent + iDelta;
+            if (iNext < 0) iNext = 0;
+
+            oModel.setProperty(sPath + "/quantity", iNext);
+            this._updateMaterialQuantityStates(oModel);
+        },
+
+        /**
+         * Keep the quantity input a whole number as the user types: strip any
+         * non-digit characters (including comma/dot) so no decimal separator ever
+         * reaches the model — this is what makes the field locale-safe.
+         * Also re-runs quantity validation.
+         * @param {sap.ui.base.Event} oEvent liveChange event from the quantity input
+         */
+        onQuantityInputLiveChange(oEvent) {
+            const oInput = oEvent.getSource();
+            const sValue = oEvent.getParameter("value") || "";
+            // Allow digits only. Removes ',', '.', letters, spaces, signs, etc.
+            const sClean = sValue.replace(/[^0-9]/g, "");
+            if (sClean !== sValue) {
+                oInput.setValue(sClean);
+            }
+            const oContext = oInput.getBindingContext("createTM");
+            if (oContext) {
+                const oModel = oContext.getModel();
+                oModel.setProperty(oContext.getPath() + "/quantity", parseInt(sClean, 10) || 0);
+                this._updateMaterialQuantityStates(oModel);
+            }
+        },
+
         /**
          * Update quantity states and remaining quantity for all material entries
          * @private

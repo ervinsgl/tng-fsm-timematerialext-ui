@@ -222,13 +222,14 @@
 
 /* Activity Header Subject - wrapping title in header */
 .activityHeaderSubject {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
 }
 
 .activityHeaderSubject .sapMTitleStyleH5 {
-    white-space: normal !important;
-    word-wrap: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     line-height: 1.3;
 }
 
@@ -712,12 +713,12 @@
 
 /* Ensure tables have fixed minimum width for horizontal scrolling */
 .tmMTable {
-    min-width: 65rem !important;
+    min-width: 62rem !important;
 }
 
 /* Compact table for time entries with repeat columns */
 .tmCompactTable {
-    min-width: 51rem !important;
+    min-width: 67rem !important;
 }
 
 .tmCompactTable .sapMInputBase,
@@ -784,4 +785,43 @@
 .tmMTable .sapMListTblRow:has(.sapMCbBg.sapMCbMarkChecked):hover,
 .tmCompactTable .sapMListTblRow:has(.sapMCbBg.sapMCbMarkChecked):hover {
     background-color: #d4e9f7 !important;
+}
+/* ========================================
+   T&M DURATION (hours + fraction) + QUANTITY STEPPERS
+   The duration control is two steppers (whole hours + quarter-hour
+   fraction) plus the unit, all in one HBox (.tmDurationHM). Keep it on a
+   single line and never let it shrink, so the buttons never render under
+   neighboring columns; the table's horizontal ScrollContainer handles
+   overflow when the dialog is narrow.
+   ======================================== */
+
+.tmDurationHM,
+.tmQuantityStepper {
+    display: inline-flex !important;
+    flex-wrap: nowrap !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    align-items: center !important;
+}
+
+.tmDurationHM .sapMBtn,
+.tmQuantityStepper .sapMBtn,
+.tmDurationHM .sapMInputBase,
+.tmQuantityStepper .sapMInputBase,
+.tmDurationHM .sapMText {
+    flex-shrink: 0 !important;
+}
+
+.tmDurationHM .sapMBtn,
+.tmQuantityStepper .sapMBtn {
+    min-width: 2rem !important;
+}
+
+/* Unit labels (Std. / Min.) inside the duration control */
+.tmUnitLabel {
+    color: #6a6d70;
+    font-size: 0.8rem;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    min-width: 1.75rem !important;
 }
