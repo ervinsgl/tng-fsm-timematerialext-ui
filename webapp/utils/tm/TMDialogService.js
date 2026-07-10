@@ -369,9 +369,11 @@ sap.ui.define([
                 defaultItemExternalId: defaultItem?.externalId || "",
                 defaultItemDisplay: defaultItem?.displayText || "",
                 // Default date from activity
-                defaultDate: activityData.plannedStartDate ? activityData.plannedStartDate.split('T')[0] : "",
-                // Today's date for maxDate binding on DatePickers — set once, avoids re-render floods
-                todayDate: (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })()
+                defaultDate: activityData.plannedStartDate ? activityData.plannedStartDate.split('T')[0] : ""
+                // NOTE: maxDate on DatePickers is bound via formatter (.formatter.formatTodayMaxDate),
+                // which returns a fresh Date per evaluation. Do NOT reintroduce a shared todayDate Date
+                // object here — sap.m.DatePicker mutates its maxDate instance, so a shared object drifts
+                // forward one day per interaction (see calendar drift bug).
             });
 
             await this._openDialog("TMCreateDialog", oCreateTMDialogModel, "createTM", "_tmCreateDialog");

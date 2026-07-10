@@ -145,7 +145,7 @@
                                             <Input value="{createTM>externalAmountValue}" type="Number" width="100%"/>
                                             <Input value="{createTM>internalAmountValue}" type="Number" width="100%"/>
                                             <Text text="{i18n>tmEurCurrency}"/>
-                                            <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{createTM>/todayDate}"/>
+                                            <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
                                             <Input value="{createTM>remarks}" width="100%" placeholder="{i18n>createTMEnterRemarks}"/>
                                         </cells>
                                     </ColumnListItem>
@@ -230,7 +230,7 @@
                                             <Text text="{i18n>tmKmUnit}"/>
                                             <Input value="{createTM>travelDuration}" type="Number" width="100%"/>
                                             <Text text="{i18n>tmMinUnit}"/>
-                                            <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{createTM>/todayDate}"/>
+                                            <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
                                             <Input value="{createTM>remarks}" width="100%" placeholder="{i18n>createTMEnterRemarks}"/>
                                         </cells>
                                     </ColumnListItem>
@@ -324,7 +324,7 @@
                                                     <Button icon="sap-icon://add" press=".onQuantityStepUp" tooltip="+1"/>
                                                 </HBox>
                                                 <Text text="{path: 'createTM>/remainingMaterialQty', formatter: '.formatter.formatRemainingQty'}"/>
-                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{createTM>/todayDate}"/>
+                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="100%" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
                                                 <Input value="{createTM>remarks}" placeholder="{i18n>createTMRemarksPlaceholder}" width="100%"/>
                                             </cells>
                                         </ColumnListItem>
@@ -422,13 +422,13 @@
                                                     <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
                                                     <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
                                                     <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
-                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-0,25 Std."/>
                                                     <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
-                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
-                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+0,25 Std."/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
                                                 </HBox>
-                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
-                                                <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
+                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
+                                                <HBox width="100%" justifyContent="Center" alignItems="Center"><CheckBox selected="{createTM>repeatEnabled}" enabled="{path: 'createTM>entryDate', formatter: '.formatRepeatEnabled'}" select=".onRepeatCheckboxChange"/></HBox>
                                                 <DatePicker 
                                                     value="{createTM>repeatEndDate}" 
                                                     valueFormat="yyyy-MM-dd" 
@@ -436,7 +436,7 @@
                                                     width="100%" 
                                                     enabled="{createTM>repeatEnabled}"
                                                     minDate="{path: 'createTM>entryDate', formatter: '.formatMinEndDate'}"
-                                                    maxDate="{createTM>/todayDate}"
+                                                    maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"
                                                     placeholder="{i18n>createTMEndPlaceholder}"
                                                 />
                                                 <Input value="{createTM>remarks}" placeholder="{i18n>createTMRemarksPlaceholder}" width="100%"/>
@@ -536,13 +536,13 @@
                                                     <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
                                                     <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
                                                     <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
-                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-0,25 Std."/>
                                                     <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
-                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
-                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+0,25 Std."/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
                                                 </HBox>
-                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
-                                                <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
+                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
+                                                <HBox width="100%" justifyContent="Center" alignItems="Center"><CheckBox selected="{createTM>repeatEnabled}" enabled="{path: 'createTM>entryDate', formatter: '.formatRepeatEnabled'}" select=".onRepeatCheckboxChange"/></HBox>
                                                 <DatePicker 
                                                     value="{createTM>repeatEndDate}" 
                                                     valueFormat="yyyy-MM-dd" 
@@ -550,7 +550,7 @@
                                                     width="100%" 
                                                     enabled="{createTM>repeatEnabled}"
                                                     minDate="{path: 'createTM>entryDate', formatter: '.formatMinEndDate'}"
-                                                    maxDate="{createTM>/todayDate}"
+                                                    maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"
                                                     placeholder="{i18n>createTMEndPlaceholder}"
                                                 />
                                                 <Input value="{createTM>remarks}" placeholder="{i18n>createTMRemarksPlaceholder}" width="100%"/>
@@ -650,13 +650,13 @@
                                                     <Input value="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationHoursPart'}" type="Text" textAlign="Center" width="2.25rem" liveChange=".onDurationHoursLiveChange" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
                                                     <Button icon="sap-icon://add" press=".onDurationHoursStepUp" tooltip="+1 h"/>
                                                     <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
-                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-15 min"/>
+                                                    <Button icon="sap-icon://less" press=".onDurationFractionStepDown" tooltip="-0,25 Std."/>
                                                     <Text text="{path: 'createTM>durationHrs', formatter: '.formatter.formatDurationFractionPart'}" textAlign="Center" width="2.5rem" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
-                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+15 min"/>
-                                                    <Text text="{i18n>tmMinUnit}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
+                                                    <Button icon="sap-icon://add" press=".onDurationFractionStepUp" tooltip="+0,25 Std."/>
+                                                    <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin tmUnitLabel"/>
                                                 </HBox>
-                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{createTM>/todayDate}"/>
-                                                <CheckBox selected="{createTM>repeatEnabled}" select=".onRepeatCheckboxChange"/>
+                                                <DatePicker value="{createTM>entryDate}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yy" width="100%" change=".onTimeEntryDateChange" maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"/>
+                                                <HBox width="100%" justifyContent="Center" alignItems="Center"><CheckBox selected="{createTM>repeatEnabled}" enabled="{path: 'createTM>entryDate', formatter: '.formatRepeatEnabled'}" select=".onRepeatCheckboxChange"/></HBox>
                                                 <DatePicker 
                                                     value="{createTM>repeatEndDate}" 
                                                     valueFormat="yyyy-MM-dd" 
@@ -664,7 +664,7 @@
                                                     width="100%" 
                                                     enabled="{createTM>repeatEnabled}"
                                                     minDate="{path: 'createTM>entryDate', formatter: '.formatMinEndDate'}"
-                                                    maxDate="{createTM>/todayDate}"
+                                                    maxDate="{path: 'createTM>entryDate', formatter: '.formatter.formatTodayMaxDate'}"
                                                     placeholder="{i18n>createTMEndPlaceholder}"
                                                 />
                                                 <Input value="{createTM>remarks}" placeholder="{i18n>createTMRemarksPlaceholder}" width="100%"/>

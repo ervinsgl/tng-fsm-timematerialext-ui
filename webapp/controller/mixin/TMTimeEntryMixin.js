@@ -480,6 +480,42 @@ sap.ui.define([
             if (sEntryDate && sEndDate && sEndDate <= sEntryDate) {
                 oModel.setProperty(sPath + "/repeatEndDate", "");
             }
+
+            // Repeat needs at least one future day after the entry date. If the entry
+            // date is today (or later), there is no valid range, so force the repeat
+            // off and clear any end date — mirrors the disabled checkbox state.
+            if (!this._isRepeatAllowed(sEntryDate)) {
+                oModel.setProperty(sPath + "/repeatEnabled", false);
+                oModel.setProperty(sPath + "/repeatEndDate", "");
+            }
+        },
+
+        /**
+         * Whether the repeat-date-range option is allowed for a given entry date.
+         * Allowed only when the entry date is strictly before today, so that the
+         * repeat range (entryDate+1 .. today) contains at least one day.
+         * @param {string} sEntryDate - Entry date (yyyy-MM-dd, or dd.MM.yyyy from typing)
+         * @returns {boolean} True if repeat is allowed
+         * @private
+         */
+        _isRepeatAllowed(sEntryDate) {
+            if (!sEntryDate) return false;
+            const oEntry = new Date(sEntryDate);
+            if (isNaN(oEntry.getTime())) return false;
+            oEntry.setHours(0, 0, 0, 0);
+            const oToday = new Date();
+            oToday.setHours(0, 0, 0, 0);
+            return oEntry.getTime() < oToday.getTime();
+        },
+
+        /**
+         * Formatter for the repeat checkbox `enabled` state.
+         * Disabled when the entry date is today or later (no future day to repeat into).
+         * @param {string} sEntryDate - Entry date value
+         * @returns {boolean} True if the checkbox should be enabled
+         */
+        formatRepeatEnabled(sEntryDate) {
+            return this._isRepeatAllowed(sEntryDate);
         },
 
         formatMinEndDate(sEntryDate) {
