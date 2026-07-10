@@ -182,7 +182,10 @@ sap.ui.define([
                 const activityId = oModel.getProperty("/activityId");
                 const orgLevelId = oModel.getProperty("/orgLevelId");
                 
-                // Helper to expand entries with multiple technicians AND repeat dates
+                // Helper to expand entries with multiple technicians AND repeat dates.
+                // Every resulting row is independent: its time block always starts at the
+                // planned start time-of-day on its own date and lasts its own duration.
+                // No sequential chaining, no parallel-group handling.
                 const expandMultiTechnicianEntries = (entries, typeOrder, timeType) => {
                     const expanded = [];
                     (entries || []).forEach(entry => {
@@ -230,7 +233,7 @@ sap.ui.define([
                     ...expandMultiTechnicianEntries(aTimeEntriesWZ, 3, 'WZ')
                 ];
                 
-                // Sort by date, then type order
+                // Sort by date, then type order (AZ, FZ, WZ) for a tidy batch order.
                 allTimeEntries.sort((a, b) => {
                     const dateA = TMPayloadService._normalizeDate(a.entryDate) || a.entryDate || '';
                     const dateB = TMPayloadService._normalizeDate(b.entryDate) || b.entryDate || '';
@@ -259,31 +262,24 @@ sap.ui.define([
                     });
                 }
                 
-                // Build Time Effort entries with sequential times per date
-                const endTimesByDate = {};
+                // Build Time Effort entries — flat, per customer requirement:
+                // every entry starts at the activity's planned start TIME-OF-DAY on its
+                // own date, and lasts exactly its own duration. No sequential chaining,
+                // no per-date cursor, no parallel-group handling. Entries that overlap
+                // (same or different technicians) are allowed and expected.
                 const activityPlannedStart = oModel.getProperty("/plannedStartDate") || new Date().toISOString();
                 const baseTimePortion = activityPlannedStart.split('T')[1] || '12:00:00Z';
+                
+                const formatDateTime = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
                 
                 for (const entry of allTimeEntries) {
                     // Normalize date — handles both yyyy-MM-dd and dd.MM.yyyy from manual typing
                     const rawDate = entry.entryDate || activityPlannedStart.split('T')[0];
                     const entryDateStr = TMPayloadService._normalizeDate(rawDate) || activityPlannedStart.split('T')[0];
-                    
-                    // Calculate start time
-                    let startTime;
-                    if (endTimesByDate[entryDateStr]) {
-                        startTime = new Date(endTimesByDate[entryDateStr]);
-                    } else {
-                        startTime = new Date(`${entryDateStr}T${baseTimePortion}`);
-                    }
-                    
                     const durationMinutes = Math.round((entry.durationHrs || 0) * 60);
-                    const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
                     
-                    // Store end time for next entry
-                    endTimesByDate[entryDateStr] = endTime.toISOString();
-                    
-                    const formatDateTime = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+                    // Start = this entry's date + planned start time-of-day. End = start + duration.
+                    const startTime = new Date(`${entryDateStr}T${baseTimePortion}`);
                     
                     batchEntries.push({
                         type: 'TimeEffort',
@@ -379,7 +375,7 @@ sap.ui.define([
                             }
                             const globalIndex = localIndex >= 0 ? chunkStart + localIndex : chunkStart;
                             const entry = chunk[localIndex >= 0 ? localIndex : 0];
-                            const reason = (r.data && (r.data.message || r.data.error)) || ("HTTP " + r.status);
+                            const reason = this._extractBatchErrorReason(r);
                             failedEntries.push({
                                 globalIndex,
                                 type: entry ? entry.type : "?",
@@ -495,6 +491,67 @@ sap.ui.define([
         _updateMainViewTMCounts(activityId, reports) {
             // This method is now replaced by _refreshTMReportsAfterCreate
             // Keeping for backward compatibility
+        },
+
+        /**
+         * Extract a human-readable failure reason from a single batch result entry.
+         *
+         * FSM wraps the real cause in a nested children[] tree. The top-level
+         * message is a generic "CA-10: Object [TIMEEFFORT:...] is not valid.".
+         * The actual constraint violation (e.g. "date must not be in the future")
+         * lives in the deepest child's `values[0]` / `message`.
+         *
+         * FSM localizes children[].values[0] to the request's Accept-Language,
+         * so when the app runs in DE the child text is already German. For known
+         * constraint error codes we also provide an i18n fallback so the message
+         * is clean in EN even if the backend returned DE text.
+         *
+         * @param {Object} r - one entry from result.results[]
+         * @returns {string} best available reason text
+         * @private
+         */
+        _extractBatchErrorReason(r) {
+            const data = r && r.data;
+            if (!data) return "HTTP " + (r ? r.status : "?");
+
+            // Walk to the deepest child (real root cause).
+            let node = data;
+            let code = node.error || null;
+            while (node.children && node.children.length > 0) {
+                node = node.children[0];
+                code = node.error || code;
+            }
+
+            // Prefer an i18n mapping for known constraint codes so the wording
+            // matches the app language regardless of what FSM returned.
+            const sMappedKey = this._batchErrorI18nKey(code);
+            if (sMappedKey) {
+                const sText = this._getText(sMappedKey);
+                if (sText && sText !== sMappedKey) return sText;
+            }
+
+            // Fall back to FSM's own localized text.
+            // values[0] is the clean message without the "CA-238:" prefix.
+            if (Array.isArray(node.values) && node.values.length > 0 &&
+                typeof node.values[0] === "string" && node.values[0].trim()) {
+                return node.values[0].trim();
+            }
+            // Strip the leading "CA-nnn: " code prefix from message if present.
+            if (typeof node.message === "string" && node.message.trim()) {
+                return node.message.replace(/^CA-\d+:\s*/, "").trim();
+            }
+            return code || ("HTTP " + r.status);
+        },
+
+        /**
+         * Map an FSM constraint error code to an i18n key, or null if unknown.
+         * @private
+         */
+        _batchErrorI18nKey(sCode) {
+            switch (sCode) {
+                case "CA-238": return "msgErrFutureDate";
+                default: return null;
+            }
         },
 
         /**

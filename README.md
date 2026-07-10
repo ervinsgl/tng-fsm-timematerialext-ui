@@ -8,6 +8,63 @@ A SAP Fiori mobile application for SAP Field Service Management (FSM), designed 
 
 ---
 
+## ⚠️ Configuration Notice: Expense & Mileage Disabled
+
+**By customer request, Expense and Mileage entry types are disabled.** All Service
+Product IDs — including those previously treated as Expense or Mileage — now resolve
+to **Time & Material**, so everything is reported through the Material/Time path.
+
+**How it works:** the Expense/Mileage type lists are set to **empty**. Because
+`TypeConfigService.isTimeMaterialType()` is the catch-all (true for any ID not in the
+Expense or Mileage lists), an empty configuration routes every ID to Time & Material.
+The Expense/Mileage creation panels and inline tables are visibility-bound to
+`isExpenseType()` / `isMileageType()`, so they never appear while the lists are empty.
+
+**What was changed (config only — no code removed):**
+
+| File | Change |
+|------|--------|
+| `config/typeconfig.json` | `expenseTypes` and `mileageTypes` set to `[]` |
+| `config/TypeConfigStore.js` | `DEFAULT_CONFIG` expense/mileage arrays emptied (required — CF file storage is ephemeral, so the store falls back to `DEFAULT_CONFIG` on restart/redeploy). Original IDs preserved in a comment. |
+| `webapp/utils/services/TypeConfigService.js` | `DEFAULT_EXPENSE_TYPES` / `DEFAULT_MILEAGE_TYPES` fallback constants emptied (used only on API failure). Original IDs preserved in comments. |
+
+> **Note:** All four defaults must stay empty together. Emptying only
+> `typeconfig.json` is not durable — on the next redeploy the backend
+> `DEFAULT_CONFIG` and the frontend fallback would re-enable the old IDs.
+
+**What was deliberately left in place (for possible future re-enable):**
+
+- **Frontend creation/edit:** `TMExpenseMileageMixin.js`, expense/mileage branches in
+  `TMDialogService.js`, `TMDialogMixin.js`, `TMEditMixin.js`, `TMTableMixin.js`,
+  `TMCreationService.js`, `TMPayloadService.js` (`buildExpensePayload`, `buildMileagePayload`)
+- **Frontend retrieval/UI:** `FSMQueryService.js` (`getExpensesForActivity`,
+  `getMileagesForActivity`), `ReportedItemsData.js`, `ExpenseTypeService.js`,
+  Expense/Mileage panels in `TMCreateDialog_fragment.xml` and tables in `ProductGroups_fragment.xml`
+- **Type Config dialog:** `TypeConfigDialog_fragment.xml`, `TypeConfigService.js` add/remove
+  handlers, `configRoutes.js`, and the `TypeConfigStore.js` CRUD/reset methods
+- **Backend:** `entryRoutes.js` (`/create-expense`, `/update-expense/:id`, `/create-mileage`,
+  `/update-mileage/:id`), `FSMService.js` (`createExpense`, `updateExpense`, `createMileage`,
+  `updateMileage`, and the `Expense`/`Mileage` batch type-map entries)
+- **i18n:** all Expense/Mileage keys in `i18n.properties` / `i18n_de.properties`
+
+**To re-enable Expense and Mileage in the future,** restore the original IDs in all
+three config locations (the original values are preserved as comments in
+`TypeConfigStore.js` and `TypeConfigService.js`):
+
+```
+expenseTypes: ["Z40000001", "Z40000007", "Z50000000"]
+mileageTypes: ["Z40000038", "Z40000008"]
+```
+
+or add them back at runtime via the **Type Config** dialog (⚙️). No code needs to be
+re-written — the paths are dormant, not deleted.
+
+> ⚠️ The **Reset** button in the Type Config dialog and the `/api/v1/reset-type-config`
+> endpoint reset to `DEFAULT_CONFIG`, which is now empty. After this change, "Reset"
+> means "disable Expense/Mileage," not "restore the old IDs."
+
+---
+
 ## Documentation
 
 - [docs/SETUP.md](docs/SETUP.md) — fresh deployment to a new BTP subaccount
@@ -226,11 +283,12 @@ This application provides a mobile-optimized interface for viewing and managing 
 **Default Type Configuration:**
 | Type | Default Service Product IDs |
 |------|----------------------------|
-| Expense | Z40000001, Z40000007, Z50000000 |
-| Mileage | Z40000038, Z40000008 |
-| Time & Material | All other IDs |
+| Expense | _(disabled — empty; see [Configuration Notice](#️-configuration-notice-expense--mileage-disabled))_ |
+| Mileage | _(disabled — empty)_ |
+| Time & Material | **All IDs** (Expense/Mileage empty ⇒ everything routes here) |
 
-*Note: Type configuration can be modified at runtime via the "Type Config" button.*
+*Note: Type configuration can be modified at runtime via the "Type Config" button.
+Expense and Mileage are currently disabled by customer request.*
 
 **Technology Stack:**
 - **Frontend:** SAP UI5 (Fiori)
@@ -379,11 +437,13 @@ Entry type shown depends on Activity Service Product. **Types are configurable v
 
 | Entry Type | Default Service Product IDs | Key Fields |
 |------------|----------------------------|------------|
-| **Expense** | Z40000001, Z40000007, Z50000000 | Expense Type, Technician, External Amount, Internal Amount, Date, Remarks |
-| **Mileage** | Z40000038, Z40000008 | Mileage Type, Technician, Distance (km), Travel Duration (min), Date, Remarks |
-| **Time & Material** | All other IDs | Material section (Item, Technician, Quantity, Date, Remarks) + Time sections (AZ/FZ/WZ with Task, Multi-Technician, Duration, Date, Repeat Date Range, Remarks) |
+| **Expense** _(disabled)_ | _(empty — was Z40000001, Z40000007, Z50000000)_ | Code preserved but inactive; see [Configuration Notice](#️-configuration-notice-expense--mileage-disabled) |
+| **Mileage** _(disabled)_ | _(empty — was Z40000038, Z40000008)_ | Code preserved but inactive |
+| **Time & Material** | **All IDs** | Material section (Item, Technician, Quantity, Date, Remarks) + Time sections (AZ/FZ/WZ with Task, Multi-Technician, Duration, Date, Repeat Date Range, Remarks) |
 
-*Note: Default Service Product IDs can be modified at runtime via the "Type Config" button (⚙️) in the footer toolbar.*
+*Note: Expense/Mileage are disabled by customer request (lists emptied). With both
+lists empty, every Service Product ID falls through to Time & Material. Types can be
+re-enabled at runtime via the "Type Config" button (⚙️) or by restoring the config defaults.*
 
 ### T&M Table Columns (Viewing)
 
@@ -476,15 +536,25 @@ npm install
 ### 2. Configure Application (Optional)
 
 #### 2.1 Type Configuration Defaults
-Edit `typeconfig.json` to set default Service Product IDs:
+Current defaults — **Expense/Mileage disabled** (see [Configuration Notice](#️-configuration-notice-expense--mileage-disabled)):
 ```json
 {
-  "expenseTypes": ["Z40000001", "Z40000007", "Z50000000"],
-  "mileageTypes": ["Z40000038", "Z40000008"],
+  "expenseTypes": [],
+  "mileageTypes": [],
   "lastModified": null,
   "modifiedBy": null
 }
 ```
+With both lists empty, every Service Product ID routes to Time & Material.
+
+> **Durability:** editing `typeconfig.json` alone is not enough. CF file storage is
+> ephemeral, so on restart/redeploy the backend falls back to `DEFAULT_CONFIG` in
+> `config/TypeConfigStore.js`, and the frontend falls back to `DEFAULT_EXPENSE_TYPES` /
+> `DEFAULT_MILEAGE_TYPES` in `TypeConfigService.js` on API failure. All three are
+> currently emptied together. To re-enable, restore the original IDs
+> (`["Z40000001","Z40000007","Z50000000"]` / `["Z40000038","Z40000008"]`) in all three,
+> or add them at runtime via the Type Config dialog.
+
 *Note: These can also be changed at runtime via the Type Config dialog.*
 
 > **Account and company:** These are not configured here. They come from the BTP destination's additional properties (`account` and `company`) — see Step 3. The application throws a clear startup error if either value is missing from the destination, so configuration mistakes surface immediately instead of silently using wrong credentials.
@@ -1388,21 +1458,27 @@ YourService.fetchData()
 
 #### At Development Time (Code)
 
-**Default values** in `config/TypeConfigStore.js`:
+**Default values** in `config/TypeConfigStore.js` (Expense/Mileage disabled — original IDs preserved in a code comment there):
 ```javascript
 const DEFAULT_CONFIG = {
-    expenseTypes: ["Z40000001", "Z40000007", "Z50000000"],
-    mileageTypes: ["Z40000038", "Z40000008"],
+    expenseTypes: [],   // was ["Z40000001", "Z40000007", "Z50000000"]
+    mileageTypes: [],   // was ["Z40000038", "Z40000008"]
     lastModified: null,
     modifiedBy: null
 };
 ```
 
+**Frontend fallback** in `webapp/utils/services/TypeConfigService.js` (used only on API failure — must match):
+```javascript
+const DEFAULT_EXPENSE_TYPES = [];   // was ["Z40000001", "Z40000007", "Z50000000"]
+const DEFAULT_MILEAGE_TYPES = [];   // was ["Z40000038", "Z40000008"]
+```
+
 **Initial config file** `config/typeconfig.json`:
 ```json
 {
-  "expenseTypes": ["Z40000001", "Z40000007", "Z50000000"],
-  "mileageTypes": ["Z40000038", "Z40000008"],
+  "expenseTypes": [],
+  "mileageTypes": [],
   "lastModified": null,
   "modifiedBy": null
 }

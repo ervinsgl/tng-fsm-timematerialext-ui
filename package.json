@@ -35,7 +35,7 @@
     "unit-test": "fiori run --open \"test/unit/unitTests.qunit.html\"",
     "build:cf": "ui5 build preload --clean-dest --config ui5-deploy.yaml --include-task=generateCachebusterInfo",
     "build:mta": "rimraf resources mta_archives && mbt build",
-    "undeploy": "cf delete tns-fsm-timematerialext-ui-dev -f && cf delete-service fsm-timematerialext-destination-dev -f"
+    "undeploy": "cf delete tns-fsm-timematerialext-ui-sandbox -f"
   },
   "engines": {
     "node": ">=18.0.0",

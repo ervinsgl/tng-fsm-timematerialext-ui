@@ -21,15 +21,23 @@ sap.ui.define([], () => {
 
     /**
      * Fallback default expense type IDs (used if API fails).
+     *
+     * NOTE (Expense/Mileage disabled by customer request): intentionally EMPTY
+     * so that on API failure the app still routes every Service Product ID to
+     * Time & Material rather than re-enabling Expense entry.
+     * TO RE-ENABLE: restore ["Z40000001", "Z40000007", "Z50000000"].
      * @type {string[]}
      */
-    const DEFAULT_EXPENSE_TYPES = ["Z40000001", "Z40000007", "Z50000000"];
+    const DEFAULT_EXPENSE_TYPES = [];
 
     /**
      * Fallback default mileage type IDs (used if API fails).
+     *
+     * NOTE (Expense/Mileage disabled by customer request): intentionally EMPTY.
+     * TO RE-ENABLE: restore ["Z40000038", "Z40000008"].
      * @type {string[]}
      */
-    const DEFAULT_MILEAGE_TYPES = ["Z40000038", "Z40000008"];
+    const DEFAULT_MILEAGE_TYPES = [];
 
     /**
      * Cached configuration from backend.

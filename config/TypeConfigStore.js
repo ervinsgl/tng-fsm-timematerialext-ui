@@ -21,10 +21,25 @@ const CONFIG_FILE = path.join(__dirname, 'typeconfig.json');
 /**
  * Default configuration values.
  * Used when no config file exists or on reset.
+ *
+ * NOTE (Expense/Mileage disabled by customer request):
+ *   Both type lists are intentionally EMPTY. With empty lists, every Service
+ *   Product ID resolves to Time & Material (TypeConfigService.isTimeMaterialType
+ *   is the catch-all), so all reporting flows through the Material/Time path.
+ *   The Expense/Mileage code paths are left intact but never trigger, because
+ *   their visibility is bound to isExpenseType()/isMileageType().
+ *
+ *   Emptying the defaults here (not just typeconfig.json) is required because
+ *   Cloud Foundry file storage is ephemeral: on restart/redeploy the store
+ *   falls back to DEFAULT_CONFIG, which would otherwise re-enable the old IDs.
+ *
+ *   TO RE-ENABLE in the future, restore the original IDs below:
+ *     expenseTypes: ["Z40000001", "Z40000007", "Z50000000"]
+ *     mileageTypes: ["Z40000038", "Z40000008"]
  */
 const DEFAULT_CONFIG = {
-    expenseTypes: ["Z40000001", "Z40000007", "Z50000000"],
-    mileageTypes: ["Z40000038", "Z40000008"],
+    expenseTypes: [],
+    mileageTypes: [],
     lastModified: null,
     modifiedBy: null
 };

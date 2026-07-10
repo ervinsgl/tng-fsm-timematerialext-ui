@@ -1,6 +1,6 @@
 {
-  "expenseTypes": ["Z40000001", "Z40000007", "Z50000000"],
-  "mileageTypes": ["Z40000038", "Z40000008"],
+  "expenseTypes": [],
+  "mileageTypes": [],
   "lastModified": null,
   "modifiedBy": null
 }
