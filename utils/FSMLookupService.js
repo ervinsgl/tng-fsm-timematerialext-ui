@@ -64,26 +64,43 @@ module.exports = {
     /**
      * Get all Items for lookup/dropdown.
      * Excludes tools and Z11% items.
+     *
+     * IMPORTANT — the `tool` predicate MUST stay null-safe. Do not simplify
+     * `(w.tool = false OR w.tool IS NULL)` back to `w.tool = false`.
+     *
+     * FSM's Item master contains records where `tool` is NULL rather than
+     * false (measured in P: 74 of 133 items).
+     * 
+     * Note: `NOT LIKE 'Z11%'` also drops rows with a NULL externalId (same
+     * three-valued-logic behaviour). This is intentional — only S/4-replicated
+     * items carry an externalId, and an item without one cannot serve as a
+     * materialId anyway.
+     *
      * @returns {Promise<Array<{id: string, externalId: string, name: string}>>}
      */
     async getItems() {
         try {
             const query = `SELECT DISTINCT w.name, w.externalId, w.id 
                            FROM Item w 
-                           WHERE w.tool = false 
+                           WHERE (w.tool = false OR w.tool IS NULL)
                            AND w.externalId NOT LIKE 'Z11%'`;
-            
+
             const data = await this.makeQueryRequest(query, 'Item.24');
 
             if (!data.data || data.data.length === 0) {
+                console.warn("FSMService.getItems: query returned no items");
                 return [];
             }
 
-            return data.data.map(item => ({
+            const items = data.data.map(item => ({
                 id: item.w.id,
                 externalId: item.w.externalId,
                 name: item.w.name
             }));
+
+            console.log(`FSMService.getItems: ${items.length} items loaded`);
+
+            return items;
 
         } catch (error) {
             console.error("FSMService: Error fetching items:", error.message);
