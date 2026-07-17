@@ -122,6 +122,85 @@ sap.ui.define([
         },
 
         /* ========================================
+         * EDIT-MODE DURATION CONTROL (one-part, create-styled)
+         * Operates on the "view" model (edit table rows), unlike the create
+         * dialog's two-part handlers which operate on "createTM".
+         * ======================================== */
+
+        /**
+         * Resolve the view-model binding context for an edit-duration control.
+         * @private
+         */
+        _getEditDurationContext(oEvent) {
+            const oCtrl = oEvent.getSource();
+            const oContext = oCtrl.getBindingContext("view");
+            if (!oContext) return null;
+            const oModel = oContext.getModel();
+            const sPath = oContext.getPath();
+            const fTotal = parseFloat(oModel.getProperty(sPath + "/durationHrs")) || 0;
+            return { oCtrl, oModel, sPath, fTotal };
+        },
+
+        /** Step the whole duration up by 0.25 h. */
+        onEditDurationStepUp(oEvent) {
+            const c = this._getEditDurationContext(oEvent);
+            if (!c) return;
+            const fNew = Math.round((c.fTotal + 0.25) * 4) / 4;
+            c.oModel.setProperty(c.sPath + "/durationHrs", fNew);
+        },
+
+        /** Step the whole duration down by 0.25 h, clamped at 0. */
+        onEditDurationStepDown(oEvent) {
+            const c = this._getEditDurationContext(oEvent);
+            if (!c) return;
+            let fNew = Math.round((c.fTotal - 0.25) * 4) / 4;
+            if (fNew < 0) fNew = 0;
+            c.oModel.setProperty(c.sPath + "/durationHrs", fNew);
+        },
+
+        /**
+         * While typing: allow only digits and a single decimal separator
+         * (',' or '.'). Strips anything else so no invalid character reaches
+         * the field. Does not yet write to the model — that happens on change
+         * (blur/enter) so partial input like "20," isn't prematurely parsed.
+         */
+        onEditDurationLiveChange(oEvent) {
+            const oInput = oEvent.getSource();
+            const sValue = oEvent.getParameter("value") || "";
+            // Keep digits and the first separator only.
+            let sClean = sValue.replace(/[^0-9.,]/g, "");
+            const firstSep = sClean.search(/[.,]/);
+            if (firstSep !== -1) {
+                const head = sClean.slice(0, firstSep + 1);
+                const tail = sClean.slice(firstSep + 1).replace(/[.,]/g, "");
+                sClean = head + tail;
+            }
+            if (sClean !== sValue) oInput.setValue(sClean);
+        },
+
+        /**
+         * On commit (blur/enter): parse the typed value (locale decimal comma or
+         * dot), snap to the nearest 0.25, clamp at 0, and write to the model. The
+         * formatter then re-renders it as e.g. "20,00".
+         */
+        onEditDurationChange(oEvent) {
+            const oInput = oEvent.getSource();
+            const oContext = oInput.getBindingContext("view");
+            if (!oContext) return;
+            const oModel = oContext.getModel();
+            const sPath = oContext.getPath();
+
+            let sValue = (oEvent.getParameter("value") || "").trim();
+            // Normalize locale decimal comma to dot for parsing.
+            sValue = sValue.replace(",", ".");
+            let fVal = parseFloat(sValue);
+            if (isNaN(fVal) || fVal < 0) fVal = 0;
+            // Snap to nearest quarter hour to match the 0.25 step.
+            fVal = Math.round(fVal * 4) / 4;
+            oModel.setProperty(sPath + "/durationHrs", fVal);
+        },
+
+        /* ========================================
          * EXPENSE ENTRY HANDLERS
          * ======================================== */
 
@@ -415,7 +494,7 @@ sap.ui.define([
                         await this._refreshTMReportsAfterCreate(activityId);
                     }
                 } else {
-                    MessageBox.error(this._getText("msgFailedUpdateMaterial", [result.message || this._getText("msgUnknownError")]));
+                    MessageBox.error(this._getText("msgFailedUpdateMaterial", [this._extractUpdateErrorReason(result)]));
                 }
             } catch (error) {
                 console.error("Error updating material:", error);
@@ -482,6 +561,52 @@ sap.ui.define([
             return lines.join('\n');
         },
 
+        /**
+         * Extract a human-readable failure reason from a single-update response.
+         *
+         * The backend forwards FSM's full error object as result.error (see
+         * entryRoutes update handlers), while result.message is only FSM's generic
+         * top-level wrapper (e.g. "CA-10: Object [...] is not valid."). The real
+         * constraint violation — e.g. CA-238 future-date — is nested in
+         * result.error.children[0].values[0]. This walks to the deepest child and
+         * returns the clean localized text, matching the create/batch behavior.
+         *
+         * @param {Object} result - parsed JSON body from the update endpoint
+         * @returns {string} best available reason text
+         * @private
+         */
+        _extractUpdateErrorReason(result) {
+            const err = result && result.error;
+            // error may be the FSM object, or a plain string (network/other).
+            if (!err || typeof err === "string") {
+                return (result && result.message) || err || this._getText("msgUnknownError");
+            }
+
+            // Walk to the deepest child (real root cause).
+            let node = err;
+            let code = node.error || null;
+            while (node.children && node.children.length > 0) {
+                node = node.children[0];
+                code = node.error || code;
+            }
+
+            // Prefer an i18n mapping for known constraint codes.
+            if (code === "CA-238") {
+                const sText = this._getText("msgErrFutureDate");
+                if (sText && sText !== "msgErrFutureDate") return sText;
+            }
+
+            // FSM's own localized text: values[0] is clean (no "CA-238:" prefix).
+            if (Array.isArray(node.values) && node.values.length > 0 &&
+                typeof node.values[0] === "string" && node.values[0].trim()) {
+                return node.values[0].trim();
+            }
+            if (typeof node.message === "string" && node.message.trim()) {
+                return node.message.replace(/^CA-\d+:\s*/, "").trim();
+            }
+            return code || (result && result.message) || this._getText("msgUnknownError");
+        },
+
         async _submitTimeEffortUpdate(timeEffortId, payload, sPath, oModel) {
             try {
                 sap.ui.core.BusyIndicator.show(0);
@@ -503,7 +628,7 @@ sap.ui.define([
                         await this._refreshTMReportsAfterCreate(activityId);
                     }
                 } else {
-                    MessageBox.error(this._getText("msgFailedUpdateTimeEffort", [result.message || this._getText("msgUnknownError")]));
+                    MessageBox.error(this._getText("msgFailedUpdateTimeEffort", [this._extractUpdateErrorReason(result)]));
                 }
             } catch (error) {
                 console.error("Error updating time effort:", error);

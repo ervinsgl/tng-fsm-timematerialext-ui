@@ -192,25 +192,6 @@ sap.ui.define([
         },
 
         /**
-         * Format hours unit based on entry type.
-         * @param {string} type - Entry type (Time Effort, Material, etc.)
-         * @returns {string} Hours unit label or empty string
-         */
-        formatHoursUnit: function(type) {
-            if (type === 'Time Effort') {
-                try {
-                    const oComponent = sap.ui.getCore().getComponent("container-com.tns.fsm.timematerialext.app");
-                    if (oComponent) {
-                        const oBundle = oComponent.getModel("i18n").getResourceBundle();
-                        return oBundle.getText("unitHours");
-                    }
-                } catch (e) { /* fallback */ }
-                return "hrs";
-            }
-            return "";
-        },
-
-        /**
          * Format pieces unit based on entry type.
          * @param {string} type - Entry type (Time Effort, Material, etc.)
          * @returns {string} Pieces unit label or empty string
@@ -255,6 +236,29 @@ sap.ui.define([
             const n = parseFloat(hrs);
             const v = isNaN(n) ? 0 : n;
             return String(Math.floor(v));
+        },
+
+        /**
+         * Whole duration (hours, 2 decimals) shown in the user's locale, for the
+         * one-part edit-mode duration input. e.g. 20 -> "20,00", 2.5 -> "2,50".
+         * Used only in the edit table's duration field (the create dialog uses the
+         * split hours/fraction parts instead).
+         * @param {number|string} hrs total duration in hours
+         * @returns {string} localized 2-decimal duration string
+         */
+        formatDurationWhole: function(hrs) {
+            const n = parseFloat(hrs);
+            const v = isNaN(n) ? 0 : n;
+            try {
+                const oFmt = NumberFormat.getFloatInstance({
+                    minFractionDigits: 2,
+                    maxFractionDigits: 2,
+                    groupingEnabled: false
+                });
+                return oFmt.format(v);
+            } catch (e) {
+                return v.toFixed(2);
+            }
         },
 
         /**

@@ -65,6 +65,51 @@ re-written — the paths are dormant, not deleted.
 
 ---
 
+## ⏰ Time Entries: Fixed 00:01 Start & Summer/Winter (DST) Handling
+
+**Every time effort is created with a start time of 00:01 on its own date**, not at the
+activity's planned start time. The entry's date comes from the row's `Datum`; only the
+time-of-day is fixed to 00:01. Duration is then added on top (end = 00:01 + duration).
+
+**Why 00:01:** FSM validates each time effort's **local** date against "today" and rejects
+future dates (`CA-238` — *"Das eingegebene Datum darf nicht in der Zukunft liegen"*). Some
+activities have a `plannedStartDate` late in the evening (e.g. 23:00 local); starting there
+and adding a multi-hour duration pushed the block past midnight into the **next** day, which
+FSM treated as a future date and rejected. Anchoring the start at 00:01 keeps the whole block
+(00:01 + duration) inside the entry's own date for any realistic duration.
+
+**Why summer/winter (DST) matters here:** FSM stores each time effort against
+`startDateTimeTimeZoneId: "Europe/Berlin"` (set in `TMPayloadService.buildTimeEffortPayload`),
+so the value FSM validates is the **Berlin wall-clock time**, not the raw UTC instant we send.
+To land on 00:01 Berlin we must send the UTC instant that Berlin reads as 00:01, and that
+differs by season:
+
+| Period | Berlin offset | UTC instant sent for 00:01 Berlin |
+|--------|---------------|-----------------------------------|
+| Winter (standard time) | UTC+1 | `23:01Z` of the **previous** day |
+| Summer (DST)           | UTC+2 | `22:01Z` of the **previous** day |
+
+Sending a naive `00:01Z` would be read by FSM as 01:01 (winter) or 02:01 (summer) Berlin —
+usually the right date, but not truly 00:01 and fragile near midnight. So the conversion is
+made **DST-aware**.
+
+**Where it's implemented:** `TMSaveMixin.js`
+- `_berlinLocalToUtc(dateStr, hours, minutes)` resolves Berlin's offset for the specific date
+  via the `Intl` API (no external timezone library) and returns the correct UTC `Date`.
+- The time-effort build loop calls `this._berlinLocalToUtc(entryDateStr, 0, 1)` for every entry.
+
+**DST transition days are safe:** Germany switches DST at 02:00/03:00, never at midnight, so
+00:01 is always unambiguously on the correct side of the switch (no skipped or repeated local
+time at 00:01). Verified across a full-year sweep including the spring-forward (last Sun in
+March) and fall-back (last Sun in October) days.
+
+> **Note:** the zone is intentionally hardcoded to `Europe/Berlin` to match the zone IDs
+> already hardcoded throughout `TMPayloadService`. If technicians in another timezone ever use
+> the app, both places must change together (source the zone from the activity or a config
+> value) — otherwise the stored local time and the validation date would diverge.
+
+---
+
 ## Documentation
 
 - [docs/SETUP.md](docs/SETUP.md) — fresh deployment to a new BTP subaccount

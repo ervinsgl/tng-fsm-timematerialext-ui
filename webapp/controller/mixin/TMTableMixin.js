@@ -997,7 +997,7 @@ sap.ui.define([
                                 oModel.setProperty(entry._path + "/editMode", false);
                                 aSavedEntries.push(entry);
                             } else {
-                                const reason = (res.data && (res.data.message || res.data.error)) || ("HTTP " + res.status);
+                                const reason = this._extractBatchErrorReason(res);
                                 failedEntries.push({ globalIndex: chunkStart + localIndex, type: entry.type, reason });
                             }
                         });

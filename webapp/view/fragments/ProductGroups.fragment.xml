@@ -211,8 +211,7 @@
                                                                 <Column width="6rem" hAlign="Center"><Text text="{i18n>tmColStatus}"/></Column>
                                                                 <Column width="8rem" hAlign="Begin"><Text text="{i18n>tmColDescription}"/></Column>
                                                                 <Column width="10rem" hAlign="Begin"><Text text="{i18n>tmColTechnician}"/></Column>
-                                                                <Column width="6.5rem" hAlign="Begin"><Text text="{i18n>tmColTime}"/></Column>
-                                                                <Column width="3rem" hAlign="Begin"><Text text=""/></Column>
+                                                                <Column width="12rem" hAlign="Begin"><Text text="{i18n>tmColTime}"/></Column>
                                                                 <Column width="5rem" hAlign="Begin"><Text text="{i18n>tmColQty}"/></Column>
                                                                 <Column width="3rem" hAlign="Begin"><Text text=""/></Column>
                                                                 <Column width="9rem" hAlign="Begin"><Text text="{i18n>tmColDate}"/></Column>
@@ -227,9 +226,13 @@
                                                                         <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'DECLINED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{= ${view>type} === 'Time Effort' ? ${view>taskDisplayText} : ${view>itemDisplayText}}" wrapping="false"/>
                                                                         <Text text="{view>createPersonDisplayText}" wrapping="false"/>
-                                                                        <!-- Time: show StepInput for Time Effort (in hours), N/A for Material -->
-                                                                        <StepInput value="{view>durationHrs}" min="0" step="0.25" displayValuePrecision="2" width="5rem" editable="{view>editMode}" visible="{= ${view>type} === 'Time Effort'}"/>
-                                                                        <Text text="{path: 'view>type', formatter: '.formatter.formatHoursUnit'}"/>
+                                                                        <!-- Time: one-part duration stepper (create-dialog styling), edit mode only -->
+                                                                        <HBox alignItems="Center" wrap="NoWrap" visible="{= ${view>type} === 'Time Effort'}">
+                                                                            <Button icon="sap-icon://less" press=".onEditDurationStepDown" tooltip="-0,25 Std." visible="{view>editMode}"/>
+                                                                            <Input value="{path: 'view>durationHrs', formatter: '.formatter.formatDurationWhole'}" type="Text" textAlign="Center" width="3.5rem" liveChange=".onEditDurationLiveChange" change=".onEditDurationChange" editable="{view>editMode}" class="sapUiTinyMarginBegin sapUiTinyMarginEnd"/>
+                                                                            <Button icon="sap-icon://add" press=".onEditDurationStepUp" tooltip="+0,25 Std." visible="{view>editMode}"/>
+                                                                            <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
+                                                                        </HBox>
                                                                         <!-- Qty: show Input for Material, N/A for Time Effort -->
                                                                         <Input value="{view>quantity}" type="Number" width="4rem" editable="{view>editMode}" visible="{= ${view>type} === 'Material'}"/>
                                                                         <Text text="{path: 'view>type', formatter: '.formatter.formatPiecesUnit'}"/>

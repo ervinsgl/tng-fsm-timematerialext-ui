@@ -192,39 +192,76 @@ module.exports = {
      * @returns {Promise<Object>} Map of objectId to {decisionStatus, decisionRemarks}
      */
     async getApprovalStatusBatch(objectIds) {
-        try {
-            if (!objectIds || objectIds.length === 0) {
-                return {};
-            }
-
-            const statusMap = {};
-            
-            const promises = objectIds.map(async (objectId) => {
-                try {
-                    const query = `SELECT w.decisionStatus, w.decisionRemarks FROM Approval w WHERE w.object.objectId = '${objectId}'`;
-                    const data = await this.makeQueryRequest(query, 'Approval.15');
-                    
-                    if (data.data && data.data.length > 0) {
-                        const approval = data.data[0]?.w;
-                        if (approval?.decisionStatus) {
-                            statusMap[objectId] = {
-                                decisionStatus: approval.decisionStatus,
-                                decisionRemarks: approval.decisionRemarks || null
-                            };
-                        }
-                    }
-                } catch (err) {
-                    console.error('FSMService: Error fetching approval for', objectId, ':', err.message);
-                }
-            });
-            
-            await Promise.all(promises);
-            return statusMap;
-
-        } catch (error) {
-            console.error("FSMService: Error fetching Approval statuses batch:", error.message);
+        if (!objectIds || objectIds.length === 0) {
             return {};
         }
+
+        // De-duplicate and drop falsy IDs so the IN() lists stay clean.
+        const ids = [...new Set(objectIds.filter(Boolean))];
+
+        // IMPORTANT — do NOT revert this to one makeQueryRequest per objectId.
+        //
+        // The previous implementation fired one FSM Query API request per ID via
+        // Promise.all. For a 274-entry activity that is 274 concurrent requests.
+        // FSM rate-limits concurrent query requests, so a random subset failed
+        // each call; failures were caught and silently omitted from statusMap,
+        // and the frontend rendered the missing entries with its PENDING fallback.
+        // That is why the UI showed a *different* set of PENDING rows on every
+        // refresh even though every Approval was APPROVED. Fix: batch the IDs into
+        // a small number of IN() queries with bounded concurrency, and let a chunk
+        // failure surface instead of dropping rows into a false PENDING state.
+
+        const CHUNK_SIZE = 100;   // keeps the IN() list well under FSM's query-length limit
+        const MAX_CONCURRENCY = 4;
+
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+            chunks.push(ids.slice(i, i + CHUNK_SIZE));
+        }
+
+        const statusMap = {};
+
+        const runChunk = async (chunk) => {
+            // Escape single quotes defensively (FSM IDs are GUIDs, but be safe).
+            const inList = chunk.map(id => `'${String(id).replace(/'/g, "''")}'`).join(', ');
+            const query = `SELECT w.object.objectId, w.decisionStatus, w.decisionRemarks `
+                + `FROM Approval w WHERE w.object.objectId IN (${inList})`;
+
+            const data = await this.makeQueryRequest(query, 'Approval.15');
+            const rows = (data && Array.isArray(data.data)) ? data.data : [];
+
+            for (const row of rows) {
+                const w = row?.w;
+                // FSM returns the projected nested path as a FLAT property key with a
+                // literal dot in the name ("object.objectId"), NOT as w.object.objectId.
+                // Reading it as a nested path yields undefined and drops every row.
+                const objectId = w ? w["object.objectId"] : undefined;
+                if (objectId && w?.decisionStatus) {
+                    statusMap[objectId] = {
+                        decisionStatus: w.decisionStatus,
+                        decisionRemarks: w.decisionRemarks || null
+                    };
+                }
+            }
+        };
+
+        // Bounded-concurrency worker pool: at most MAX_CONCURRENCY chunks in flight.
+        let cursor = 0;
+        const worker = async () => {
+            while (cursor < chunks.length) {
+                const chunk = chunks[cursor++];
+                await runChunk(chunk);
+            }
+        };
+
+        // A chunk error rejects the whole batch on purpose: the route returns 500
+        // and the frontend leaves prior/unknown state rather than falsely showing
+        // these rows as PENDING. Do not swallow per-chunk errors here.
+        await Promise.all(
+            Array.from({ length: Math.min(MAX_CONCURRENCY, chunks.length) }, worker)
+        );
+
+        return statusMap;
     },
 
     // ========================================
