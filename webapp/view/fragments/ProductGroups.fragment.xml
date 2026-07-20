@@ -109,7 +109,7 @@
                                                 </HBox>
                                                 <HBox class="activityFieldRow">
                                                     <Label text="{i18n>activityItemType}" design="Bold" class="activityFieldLabel"/>
-                                                    <Text text="{view>itemTypeCode}" class="activityFieldValue"/>
+                                                    <Text text="{= ${view&gt;itemTypeCode} === 'ZDL5' ? ${i18n&gt;invoicingTypeZDL5} : ${view&gt;itemTypeCode} === 'ZDL7' ? ${i18n&gt;invoicingTypeZDL7} : ${view&gt;itemTypeCode} === 'ZDL4' ? ${i18n&gt;invoicingTypeZDL4} : ${view&gt;itemTypeCode} }" class="activityFieldValue"/>
                                                 </HBox>
                                             </VBox>
                                             <VBox class="activityColumn">

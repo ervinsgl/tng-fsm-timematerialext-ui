@@ -72,7 +72,7 @@
                         <VBox class="detailField">
                             <layoutData><l:GridData span="XL4 L4 M6 S12"/></layoutData>
                             <Label text="{i18n>activityItemType}" design="Bold" class="infoLabel"/>
-                            <Text text="{createTM>/itemTypeCode}" class="infoValue detailFieldValue"/>
+                            <Text text="{= ${createTM&gt;/itemTypeCode} === 'ZDL5' ? ${i18n&gt;invoicingTypeZDL5} : ${createTM&gt;/itemTypeCode} === 'ZDL7' ? ${i18n&gt;invoicingTypeZDL7} : ${createTM&gt;/itemTypeCode} === 'ZDL4' ? ${i18n&gt;invoicingTypeZDL4} : ${createTM&gt;/itemTypeCode} }" class="infoValue detailFieldValue"/>
                         </VBox>
                     </l:Grid>
                 </VBox>
