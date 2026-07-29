@@ -6,8 +6,6 @@
  * activity path resolution, and debug helpers.
  * 
  * Handlers:
- * - onEditDurationChange: Recalculate endDateTime when duration changes in edit mode
- * - onEditMileageDurationChange: Recalculate travelEndDateTime for mileage edits
  * - onCancelCreateTM: Close the T&M creation dialog
  * - _getActivityIdFromPath: Extract activity ID from model path
  * - _showEntryJSON: Debug helper to display entry data as formatted JSON
@@ -79,7 +77,7 @@ sap.ui.define([
                 if (report.type === "Time Effort") {
                     const timeDate = report.startDateTime || report.createDateTime;
                     if (timeDate) {
-                        report.entryDateFormatted = timeDate.split('T')[0];
+                        report.entryDateFormatted = DateTimeService.toBerlinDateString(timeDate);
                     } else {
                         report.entryDateFormatted = '';
                     }
@@ -92,7 +90,7 @@ sap.ui.define([
                 if (report.type === "Material") {
                     const matDate = report.date || report.fullData?.date || report.createDateTime;
                     if (matDate) {
-                        report.entryDateFormatted = matDate.split('T')[0];
+                        report.entryDateFormatted = DateTimeService.toBerlinDateString(matDate);
                     } else {
                         report.entryDateFormatted = '';
                     }
@@ -114,7 +112,7 @@ sap.ui.define([
                     // Extract date
                     const expDate = report.fullData?.date || report.date || report.createDateTime;
                     if (expDate) {
-                        report.entryDateFormatted = expDate.split('T')[0];
+                        report.entryDateFormatted = DateTimeService.toBerlinDateString(expDate);
                     } else {
                         report.entryDateFormatted = '';
                     }
@@ -165,7 +163,7 @@ sap.ui.define([
                     // Extract date
                     const mileDate = report.fullData?.date || report.date || report.createDateTime;
                     if (mileDate) {
-                        report.entryDateFormatted = mileDate.split('T')[0];
+                        report.entryDateFormatted = DateTimeService.toBerlinDateString(mileDate);
                     } else {
                         report.entryDateFormatted = '';
                     }
@@ -273,44 +271,6 @@ sap.ui.define([
             }
 
             oModel.setProperty(sPath + "/editMode", bNewEditMode);
-        },
-
-        /**
-         * Handle duration change in edit mode
-         */
-        onEditDurationChange(oEvent) {
-            let oContext = oEvent.getSource().getBindingContext("view");
-            let oModel;
-            
-            if (oContext) {
-                oModel = this.getView().getModel("view");
-            } else {
-                oContext = oEvent.getSource().getBindingContext("dialog");
-                if (!oContext) return;
-                oModel = this._tmReportsDialog.getModel("dialog");
-            }
-
-            const newDuration = oEvent.getParameter("value");
-            TMEditService.handleDurationChange(oModel, oContext.getPath(), "TimeEffort", newDuration);
-        },
-
-        /**
-         * Handle mileage duration change in edit mode
-         */
-        onEditMileageDurationChange(oEvent) {
-            let oContext = oEvent.getSource().getBindingContext("view");
-            let oModel;
-            
-            if (oContext) {
-                oModel = this.getView().getModel("view");
-            } else {
-                oContext = oEvent.getSource().getBindingContext("dialog");
-                if (!oContext) return;
-                oModel = this._tmReportsDialog.getModel("dialog");
-            }
-
-            const newDuration = oEvent.getParameter("value");
-            TMEditService.handleDurationChange(oModel, oContext.getPath(), "Mileage", newDuration);
         },
 
         /* ========================================

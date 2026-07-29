@@ -525,10 +525,14 @@ sap.ui.define([
                 payload.endDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
             }
             
-            // Update date if changed
+            // Update date if changed.
+            // entryDateFormatted is a Europe/Berlin calendar date (see
+            // TMDialogMixin). Rebuild the instant the same way the create path
+            // anchors it — 00:01 Berlin on that date — rather than pasting the
+            // stored UTC time portion onto the Berlin date, which would shift the
+            // entry by the Berlin offset and could roll the date over.
             if (oEntry.entryDateFormatted && payload.startDateTime) {
-                const originalTime = payload.startDateTime.split('T')[1];
-                payload.startDateTime = `${oEntry.entryDateFormatted}T${originalTime}`;
+                payload.startDateTime = DateTimeService.berlinDateToAnchorUtc(oEntry.entryDateFormatted, 0, 1);
                 const startDate = new Date(payload.startDateTime);
                 const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
                 payload.endDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');

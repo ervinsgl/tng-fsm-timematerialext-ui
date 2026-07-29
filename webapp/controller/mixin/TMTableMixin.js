@@ -15,8 +15,9 @@ sap.ui.define([
     "sap/ui/model/Sorter",
     "sap/ui/core/Fragment",
     "sap/m/ViewSettingsItem",
-    "com/tns/fsm/timematerialext/app/utils/services/ApprovalService"
-], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem, ApprovalService) => {
+    "com/tns/fsm/timematerialext/app/utils/services/ApprovalService",
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService"
+], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem, ApprovalService, DateTimeService) => {
     "use strict";
 
     return {
@@ -871,9 +872,13 @@ sap.ui.define([
                                 const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
                                 payload.endDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
                             }
+                            // entryDate is a Europe/Berlin calendar date (entryDateFormatted).
+                            // Re-anchor to 00:01 Berlin on that date the same way the create
+                            // path does, rather than pasting the stored UTC time portion onto
+                            // the Berlin date — that would shift the entry by the Berlin offset
+                            // and could roll the date over near midnight.
                             if (entryDate && payload.startDateTime) {
-                                const originalTime = payload.startDateTime.split('T')[1];
-                                payload.startDateTime = `${entryDate}T${originalTime}`;
+                                payload.startDateTime = DateTimeService.berlinDateToAnchorUtc(entryDate, 0, 1);
                                 const startDate = new Date(payload.startDateTime);
                                 const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
                                 payload.endDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
