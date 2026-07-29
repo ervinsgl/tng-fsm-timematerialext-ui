@@ -33,10 +33,11 @@ sap.ui.define([
     "com/tns/fsm/timematerialext/app/utils/services/UdfMetaService",
     "com/tns/fsm/timematerialext/app/utils/services/TechnicianService",
     "com/tns/fsm/timematerialext/app/utils/services/ContextService",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeZoneService",
     "com/tns/fsm/timematerialext/app/utils/helpers/URLHelper",
     "com/tns/fsm/timematerialext/app/utils/helpers/ProductGroupService",
     "com/tns/fsm/timematerialext/app/utils/tm/TMDataService"
-], (MessageToast, MessageBox, OrganizationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, ServiceOrderService, PersonService, BusinessPartnerService, ApprovalService, UdfMetaService, TechnicianService, ContextService, URLHelper, ProductGroupService, TMDataService) => {
+], (MessageToast, MessageBox, OrganizationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, ServiceOrderService, PersonService, BusinessPartnerService, ApprovalService, UdfMetaService, TechnicianService, ContextService, TimeZoneService, URLHelper, ProductGroupService, TMDataService) => {
     "use strict";
 
     return {
@@ -181,7 +182,8 @@ sap.ui.define([
                         orgLevelName: "Loading...",
                         // Additional Shell context
                         source: context.source,
-                        cloudHost: context.cloudHost
+                        cloudHost: context.cloudHost,
+                        ...this._timeZoneModelFields()
                     });
                     
                     URLHelper.setWebContainerContext({
@@ -207,7 +209,8 @@ sap.ui.define([
                         cloudId: context.objectId || 'N/A',
                         orgLevelId: null,
                         orgLevelName: "N/A",
-                        source: 'url'
+                        source: 'url',
+                        ...this._timeZoneModelFields()
                     });
                     return context;
                 }
@@ -217,6 +220,43 @@ sap.ui.define([
                 console.error("_loadWebContainerContext error:", error);
                 return null;
             }
+        },
+
+        /**
+         * Time-zone fields for the /webContainerContext model object.
+         *
+         * Purpose:
+         *   Supply the Context Info dialog with the active company zone and,
+         *   when relevant, the device zone.
+         *
+         * Business Context:
+         *   These fields are display-only. Nothing computes against them - the
+         *   authoritative value lives in TimeZoneService. The device zone is
+         *   shown purely so a wrong-day report can be diagnosed at a glance; it
+         *   is never used as a source, because a technician's phone travelling
+         *   abroad must not move a workday onto a different calendar date.
+         *
+         * Inputs:  none
+         * Outputs: { timeZone, timeZoneSource, deviceTimeZone, timeZoneMismatch }
+         * Dependencies: TimeZoneService
+         *
+         * Implementation Details:
+         *   Spread into EVERY object assigned to /webContainerContext. That
+         *   property is replaced wholesale (on initial load and again on
+         *   Refresh), so fields set separately afterwards would be silently
+         *   wiped on the next refresh.
+         *
+         * @returns {Object} time-zone display fields
+         * @private
+         */
+        _timeZoneModelFields() {
+            const deviceZone = TimeZoneService.getDeviceZone();
+            return {
+                timeZone: TimeZoneService.get(),
+                timeZoneSource: TimeZoneService.getSource(),
+                deviceTimeZone: deviceZone || "N/A",
+                timeZoneMismatch: TimeZoneService.hasDeviceMismatch()
+            };
         },
 
         /**

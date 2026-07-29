@@ -189,7 +189,11 @@ sap.ui.define([
                         orgLevelId: null,
                         orgLevelName: "Loading...",
                         source: null,
-                        cloudHost: null
+                        cloudHost: null,
+                        timeZone: null,
+                        timeZoneSource: null,
+                        deviceTimeZone: null,
+                        timeZoneMismatch: false
                     },
 
                     serviceCall: {

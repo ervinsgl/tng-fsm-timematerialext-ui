@@ -49,6 +49,17 @@
                     <Label text="{i18n>sessionContextObjectId}" design="Bold" width="9rem"/>
                     <Text text="{= ${view>/webContainerContext/cloudId} || 'N/A'}" wrapping="true"/>
                 </HBox>
+                <HBox alignItems="Start" class="sapUiTinyMarginBottom">
+                    <Label text="{i18n>sessionContextTimeZone}" design="Bold" width="9rem"/>
+                    <Text
+                        text="{= (${view>/webContainerContext/timeZone} || 'N/A') + ' (' + (${view>/webContainerContext/timeZoneSource} || '?') + ')' }"
+                        wrapping="true"/>
+                </HBox>
+                <HBox alignItems="Start" class="sapUiTinyMarginBottom"
+                      visible="{= !!${view>/webContainerContext/timeZoneMismatch} }">
+                    <Label text="{i18n>sessionContextDeviceTimeZone}" design="Bold" width="9rem"/>
+                    <Text text="{view>/webContainerContext/deviceTimeZone}" wrapping="true"/>
+                </HBox>
                 <HBox alignItems="Start" visible="{= !!${view>/webContainerContext/cloudHost} }">
                     <Label text="{i18n>sessionContextCloudHost}" design="Bold" width="9rem"/>
                     <Text text="{view>/webContainerContext/cloudHost}" wrapping="true"/>

@@ -12,8 +12,9 @@ sap.ui.define([
     "sap/m/MessageBox",
     "com/tns/fsm/timematerialext/app/utils/tm/TMPayloadService",
     "com/tns/fsm/timematerialext/app/utils/tm/TMDataService",
-    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService"
-], (MessageToast, MessageBox, TMPayloadService, TMDataService, TimeTaskService) => {
+    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeZoneService"
+], (MessageToast, MessageBox, TMPayloadService, TMDataService, TimeTaskService, TimeZoneService) => {
     "use strict";
 
     return {
@@ -265,17 +266,17 @@ sap.ui.define([
                 // Build Time Effort entries — every entry starts at 00:01 on its own date.
                 //
                 // Why 00:01 (and not the planned start time): FSM stores each time effort
-                // against startDateTimeTimeZoneId "Europe/Berlin" and validates the LOCAL
+                // against startDateTimeTimeZoneId (the company zone) and validates the LOCAL
                 // date against "today". Some activities have a planned start late in the
                 // evening (e.g. 23:00 local); start + duration then crosses midnight into
                 // the next (future) day, tripping FSM's CA-238 "date must not be in the
                 // future" check. Anchoring every entry at 00:01 local keeps the whole block
                 // (00:01 + duration) inside the entry's own date for any realistic duration.
                 //
-                // Because FSM interprets startDateTime in Berlin local time, we must send
-                // the UTC instant that equals 00:01 Berlin on that date. Berlin is UTC+1 in
+                // Because FSM interprets startDateTime in company-local time, we must send
+                // the UTC instant that equals 00:01 local on that date. Berlin is UTC+1 in
                 // winter and UTC+2 in summer (DST), so the correct UTC instant is 23:01Z or
-                // 22:01Z of the PREVIOUS day respectively. berlinLocalToUtc() computes this
+                // 22:01Z of the PREVIOUS day respectively. _localToUtc() computes this
                 // per-date so DST is always handled correctly.
                 const formatDateTime = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -286,8 +287,8 @@ sap.ui.define([
                     const entryDateStr = TMPayloadService._normalizeDate(rawDate) || fallbackDate;
                     const durationMinutes = Math.round((entry.durationHrs || 0) * 60);
 
-                    // Start = 00:01 Berlin local time on the entry's date, as a UTC instant.
-                    const startTime = this._berlinLocalToUtc(entryDateStr, 0, 1);
+                    // Start = 00:01 company-local time on the entry's date, as a UTC instant.
+                    const startTime = this._localToUtc(entryDateStr, 0, 1);
 
                     batchEntries.push({
                         type: 'TimeEffort',
@@ -502,36 +503,41 @@ sap.ui.define([
         },
 
         /**
-         * Convert a wall-clock time in Europe/Berlin to the equivalent UTC Date.
+         * Convert a wall-clock time in the company zone to the equivalent UTC Date.
          *
-         * FSM interprets time-effort startDateTime in Europe/Berlin (see
+         * FSM interprets time-effort startDateTime in the company time zone (see
          * startDateTimeTimeZoneId in TMPayloadService), so to place an entry at a
-         * specific Berlin local time we must send the matching UTC instant. Berlin
-         * is UTC+1 in winter and UTC+2 under DST; this resolves the offset for the
+         * specific local time we must send the matching UTC instant. Berlin is
+         * UTC+1 in winter and UTC+2 under DST; this resolves the offset for the
          * given date using the Intl API, so DST is always correct without a library.
+         *
+         * The zone comes from TimeZoneService rather than a literal, so that the
+         * zone used to COMPUTE the instant is guaranteed to be the same one sent
+         * to FSM in startDateTimeTimeZoneId.
          *
          * @param {string} dateStr - "yyyy-MM-dd" (the entry's local date)
          * @param {number} hours   - local hour (0-23)
          * @param {number} minutes - local minute (0-59)
-         * @returns {Date} UTC Date corresponding to that Berlin wall-clock time
+         * @returns {Date} UTC Date corresponding to that local wall-clock time
          * @private
          */
-        _berlinLocalToUtc(dateStr, hours, minutes) {
+        _localToUtc(dateStr, hours, minutes) {
+            const zone = TimeZoneService.get();
             const [y, m, d] = dateStr.split('-').map(n => parseInt(n, 10));
             // First guess: treat the wanted wall-clock as if it were UTC.
             const guess = new Date(Date.UTC(y, m - 1, d, hours, minutes, 0));
-            // Determine Berlin's offset (minutes) at that instant by formatting the
-            // guess in Berlin and comparing back to UTC.
+            // Determine the zone's offset (minutes) at that instant by formatting
+            // the guess in that zone and comparing back to UTC.
             const dtf = new Intl.DateTimeFormat('en-US', {
-                timeZone: 'Europe/Berlin',
+                timeZone: zone,
                 year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', second: '2-digit',
                 hour12: false
             });
             const parts = {};
             dtf.formatToParts(guess).forEach(p => { parts[p.type] = p.value; });
-            // What Berlin clock shows for our UTC guess:
-            const asBerlin = Date.UTC(
+            // What the local clock shows for our UTC guess:
+            const asLocal = Date.UTC(
                 parseInt(parts.year, 10),
                 parseInt(parts.month, 10) - 1,
                 parseInt(parts.day, 10),
@@ -539,10 +545,10 @@ sap.ui.define([
                 parseInt(parts.minute, 10),
                 parseInt(parts.second, 10)
             );
-            // Offset = how far Berlin local is ahead of UTC at this instant.
-            const offsetMs = asBerlin - guess.getTime();
+            // Offset = how far local time is ahead of UTC at this instant.
+            const offsetMs = asLocal - guess.getTime();
             // Subtract the offset so the resulting UTC instant renders as the wanted
-            // wall-clock time in Berlin.
+            // wall-clock time in the company zone.
             return new Date(guess.getTime() - offsetMs);
         },
 

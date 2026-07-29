@@ -79,34 +79,121 @@ FSM treated as a future date and rejected. Anchoring the start at 00:01 keeps th
 (00:01 + duration) inside the entry's own date for any realistic duration.
 
 **Why summer/winter (DST) matters here:** FSM stores each time effort against
-`startDateTimeTimeZoneId: "Europe/Berlin"` (set in `TMPayloadService.buildTimeEffortPayload`),
-so the value FSM validates is the **Berlin wall-clock time**, not the raw UTC instant we send.
-To land on 00:01 Berlin we must send the UTC instant that Berlin reads as 00:01, and that
-differs by season:
+`startDateTimeTimeZoneId` (set in `TMPayloadService`), so the value FSM validates is the
+**local wall-clock time**, not the raw UTC instant we send. To land on 00:01 Berlin we must
+send the UTC instant that Berlin reads as 00:01, and that differs by season:
 
 | Period | Berlin offset | UTC instant sent for 00:01 Berlin |
 |--------|---------------|-----------------------------------|
-| Winter (standard time) | UTC+1 | `23:01Z` of the **previous** day |
-| Summer (DST)           | UTC+2 | `22:01Z` of the **previous** day |
+| Winter (CET, standard time) | UTC+01:00 | `23:01Z` of the **previous** day |
+| Summer (CEST, DST)          | UTC+02:00 | `22:01Z` of the **previous** day |
 
-Sending a naive `00:01Z` would be read by FSM as 01:01 (winter) or 02:01 (summer) Berlin —
-usually the right date, but not truly 00:01 and fragile near midnight. So the conversion is
-made **DST-aware**.
+EU summer time runs from 01:00 UTC on the last Sunday in March to 01:00 UTC on the last
+Sunday in October. Sending a naive `00:01Z` would be read by FSM as 01:01 (winter) or 02:01
+(summer) Berlin — usually the right date, but not truly 00:01 and fragile near midnight. So
+the conversion is **DST-aware**.
 
-**Where it's implemented:** `TMSaveMixin.js`
-- `_berlinLocalToUtc(dateStr, hours, minutes)` resolves Berlin's offset for the specific date
-  via the `Intl` API (no external timezone library) and returns the correct UTC `Date`.
-- The time-effort build loop calls `this._berlinLocalToUtc(entryDateStr, 0, 1)` for every entry.
+### Single source of truth: `TimeZoneService`
 
-**DST transition days are safe:** Germany switches DST at 02:00/03:00, never at midnight, so
+The zone used to **compute** the instant and the zone **sent to FSM** must always be
+identical. If they drift apart, entries silently land on the wrong calendar day near
+midnight. Both now resolve from one module:
+
+`webapp/utils/services/TimeZoneService.js`
+
+| Method | Purpose |
+|--------|---------|
+| `get()` | the active company zone (IANA id) — the only value any payload or date helper uses |
+| `set(tzId, source)` | override it; rejects ids that `Intl` cannot resolve, so a bad value cannot break every timestamp |
+| `getSource()` | provenance label, shown in the Context Info dialog |
+| `getDeviceZone()` / `hasDeviceMismatch()` | the device's own zone — **display and diagnostics only** |
+
+`DEFAULT_TZ = "Europe/Berlin"` is the single constant to change for a different zone.
+
+> **The device zone is deliberately NOT a source.** It varies with wherever the technician's
+> phone happens to be, and the workday date is a payroll fact tied to the company, not to the
+> device. Using it would mean the same entry anchoring to a different real instant depending
+> on where it was typed. It is surfaced in the Context Info dialog purely so a wrong-day
+> report can be diagnosed at a glance.
+
+**Sourcing the zone externally (not currently done).** A `GET_SETTINGS` probe against
+`timeZone`, `timezone`, `TimeZone`, `companyTimeZone`, `CoreSystems.Company.TimeZone` and
+`CoreSystems.Timezone` returned `null` for every one, while documented keys (`userPerson`,
+`CoreSystems.FSM.StandaloneCompany`) answered normally — so the mechanism works and FSM
+simply does not publish a readable company time zone. `REQUIRE_CONTEXT` carries no zone
+either (only `selectedLocale`, which is not a zone). `GET_SETTINGS` is additionally
+**Web-UI-only**: the Mobile WebContainer has no Shell SDK, so a Shell company setting would
+make Web UI and Mobile disagree. If a configurable zone is ever needed, serve it from the
+**backend** (both clients can read it) and call `TimeZoneService.set()` once during startup,
+before any payload is built.
+
+### Where it's implemented
+
+**`TMSaveMixin.js` — create path**
+- `_localToUtc(dateStr, hours, minutes)` resolves the zone's offset for the specific date via
+  the `Intl` API (no external timezone library) and returns the correct UTC `Date`.
+- The time-effort build loop calls `this._localToUtc(entryDateStr, 0, 1)` for every entry.
+
+**`DateTimeService.js` — edit path and offset labels**
+- `toZonedDateString(iso, tzId)` — the local calendar date of a stored UTC instant.
+- `zonedDateToAnchorUtc(dateStr, h, m, tzId)` — rebuilds the anchor when an edited entry is
+  re-saved. Pasting the old UTC time portion onto a new date would shift the entry by the
+  offset and roll the date over near midnight.
+- `getUtcOffsetLabel(at, tzId)` — see below.
+- `toBerlinDateString()` and `berlinDateToAnchorUtc()` are retained as deprecated aliases so
+  existing callers in `TMDialogMixin` and `TMTableMixin` keep working; both delegate to the
+  zoned versions and resolve their zone from `TimeZoneService`.
+
+**`TMPayloadService.js` — payload fields**
+- `startDateTimeTimeZoneId` / `endDateTimeTimeZoneId` (and the Mileage `travel*TimeZoneId`
+  fields) come from `TimeZoneService.get()`.
+- `timeZoneId` is computed per entry — see the next section.
+
+### The `timeZoneId` offset field
+
+`timeZoneId` was previously hardcoded to `"UTC+02:00"`, which is **wrong for roughly five
+months of every year** (Berlin is UTC+01:00 outside EU summer time). It is now resolved by
+`DateTimeService.getUtcOffsetLabel()`, which uses `Intl` `timeZoneName: 'longOffset'` with a
+format-and-compare fallback for engines that lack it.
+
+> **Critical:** the label is resolved against **the entry's own `startDateTime`**, never
+> against `new Date()`. A January entry created in July must report `UTC+01:00`. For this
+> reason `timeZoneId` is deliberately **not** part of the shared `timeEffortConstants` object
+> in `buildTimeAndMaterialPayload` — putting it there is what produced the original bug.
+
+**DST transition days are safe:** Germany switches at 02:00/03:00, never at midnight, so
 00:01 is always unambiguously on the correct side of the switch (no skipped or repeated local
-time at 00:01). Verified across a full-year sweep including the spring-forward (last Sun in
-March) and fall-back (last Sun in October) days.
+time at 00:01).
 
-> **Note:** the zone is intentionally hardcoded to `Europe/Berlin` to match the zone IDs
-> already hardcoded throughout `TMPayloadService`. If technicians in another timezone ever use
-> the app, both places must change together (source the zone from the activity or a config
-> value) — otherwise the stored local time and the validation date would diverge.
+**Verified in QA** — batch-created entries spanning the boundary, on both Mobile WebContainer
+and Web UI Shell, each rendering on the correct day in FSM:
+
+| Entry date | UTC instant sent | `timeZoneId` | FSM shows |
+|------------|------------------|--------------|-----------|
+| 2026-01-07 | `2026-01-06T23:01Z` | `UTC+01:00` | 07/01/2026, 00:01 |
+| 2026-03-18 | `2026-03-17T23:01Z` | `UTC+01:00` | 18/03/2026, 00:01 |
+| 2026-03-31 | `2026-03-30T22:01Z` | `UTC+02:00` | 31/03/2026, 00:01 |
+| 2026-06-16 | `2026-06-15T22:01Z` | `UTC+02:00` | 16/06/2026, 00:01 |
+
+All four were created in the same batch on the same day, so the differing offsets confirm
+per-entry resolution rather than a single value derived from "now". FSM accepted `UTC+01:00`
+without a validation error.
+
+> **Open question:** whether FSM reads `timeZoneId` at all, or only
+> `startDateTimeTimeZoneId`. FSM renders the zone as an IANA name, suggesting the latter —
+> which would explain why the long-standing wrong value never surfaced a visible bug. The
+> field is now correct either way.
+
+### Context Info dialog
+
+The Session Context dialog shows the active zone and its provenance, e.g.
+`Europe/Berlin (default)`. A **Device Zone** row appears only when the device sits in a
+different zone — informational, nothing computes against it.
+
+> These fields are supplied by `DataLoadingMixin._timeZoneModelFields()` and spread into
+> **every** assignment to `/webContainerContext`. That model property is replaced wholesale
+> on initial load *and again on Refresh*, so fields set separately afterwards get silently
+> wiped. Any future field on that object must be added the same way.
 
 ---
 
@@ -1169,7 +1256,7 @@ webapp/
 ├── # ─────────── FRONTEND SERVICES ───────────
 ├── utils/
 │   ├── helpers/
-│   │   ├── DateTimeService.js       # Date/time utilities (~115 lines)
+│   │   ├── DateTimeService.js       # Date/time utilities + DST-aware zone helpers (~340 lines)
 │   │   ├── ProductGroupService.js   # Activity grouping by product (~130 lines)
 │   │   ├── ReportedItemsData.js     # T&M data fetching (~55 lines)
 │   │   └── URLHelper.js             # Web container context handling (~230 lines)
@@ -1187,6 +1274,7 @@ webapp/
 │   │   ├── ServiceOrderService.js   # Service order/composite tree (~95 lines)
 │   │   ├── TechnicianService.js     # Technician suggestions (~240 lines)
 │   │   ├── TimeTaskService.js       # Time task ID lookup (~195 lines)
+│   │   ├── TimeZoneService.js       # Company time zone: single source of truth (~140 lines)
 │   │   ├── TypeConfigService.js     # Expense/Mileage type config (~320 lines)
 │   │   └── UdfMetaService.js        # UDF Meta ID lookup (~180 lines)
 │   │

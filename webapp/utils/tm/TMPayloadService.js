@@ -28,11 +28,15 @@
  * @module com/tns/fsm/timematerialext/app/utils/tm/TMPayloadService
  * @requires com/tns/fsm/timematerialext/app/utils/tm/TMCreationService
  * @requires com/tns/fsm/timematerialext/app/utils/services/TimeTaskService
+ * @requires com/tns/fsm/timematerialext/app/utils/services/TimeZoneService
+ * @requires com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService
  */
 sap.ui.define([
     "com/tns/fsm/timematerialext/app/utils/tm/TMCreationService",
-    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService"
-], (TMCreationService, TimeTaskService) => {
+    "com/tns/fsm/timematerialext/app/utils/services/TimeTaskService",
+    "com/tns/fsm/timematerialext/app/utils/services/TimeZoneService",
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService"
+], (TMCreationService, TimeTaskService, TimeZoneService, DateTimeService) => {
     "use strict";
 
     return {
@@ -140,15 +144,22 @@ sap.ui.define([
                 }
             }
 
+            // DST-correct offset label, resolved against THIS entry's own date.
+            // A backdated January entry must report UTC+01:00 even when it is
+            // created in July. Previously hardcoded to "UTC+02:00", which was
+            // wrong for roughly five months of every year.
+            const zoneId = TimeZoneService.get();
+            const offsetLabel = DateTimeService.getUtcOffsetLabel(oEntry.startDateTime);
+
             return {
                 chargeOption: "CHARGEABLE",
                 inactive: false,
-                startDateTimeTimeZoneId: "Europe/Berlin",
-                endDateTimeTimeZoneId: "Europe/Berlin",
+                startDateTimeTimeZoneId: zoneId,
+                endDateTimeTimeZoneId: zoneId,
                 orgLevel: orgLevelId || "",
                 breakInMinutes: 0,
                 unitPrice: null,
-                timeZoneId: "UTC+02:00",
+                timeZoneId: offsetLabel,
                 endDateTime: endDateTime,
                 internalRemarks: null,
                 breakStartDateTime: null,
@@ -296,10 +307,10 @@ sap.ui.define([
                 type: null,
                 travelEndDateTime: formatDateTime(endDate),
                 chargeOption: "CHARGEABLE",
-                travelEndDateTimeTimeZoneId: "Europe/Berlin",
+                travelEndDateTimeTimeZoneId: TimeZoneService.get(),
                 inactive: false,
                 travelStartDateTime: formatDateTime(startDate),
-                travelStartDateTimeTimeZoneId: "Europe/Berlin",
+                travelStartDateTimeTimeZoneId: TimeZoneService.get(),
                 createPerson: this._buildCreatePerson(oEntry.technicianId, oEntry.technicianExternalId),
                 driver: false,
                 privateCar: false,
@@ -347,11 +358,15 @@ sap.ui.define([
 
             const timeEffortConstants = {
                 inactive: false,
-                startDateTimeTimeZoneId: "Europe/Berlin",
-                endDateTimeTimeZoneId: "Europe/Berlin",
+                startDateTimeTimeZoneId: TimeZoneService.get(),
+                endDateTimeTimeZoneId: TimeZoneService.get(),
                 breakInMinutes: 0,
                 unitPrice: null,
-                timeZoneId: "UTC+02:00",
+                // NOTE: timeZoneId is deliberately NOT here. It is DST-dependent
+                // and must be resolved per effort against that effort's own
+                // startDateTime - see buildTimeEffortPayload below. Putting it in
+                // the shared constants is what produced the old hardcoded
+                // "UTC+02:00" that was wrong every winter.
                 internalRemarks: null,
                 breakStartDateTime: null,
                 udfValues: [{
@@ -456,9 +471,12 @@ sap.ui.define([
                 const entryTechnicianExternalId = entry.technicianExternalId || technicianExternalId;
                 const entryTechnicianId = entry.technicianId || oEntry.technicianId || "";
                 
+                const offsetLabel = DateTimeService.getUtcOffsetLabel(startTime);
+
                 return {
                     chargeOption: "CHARGEABLE",
                     ...timeEffortConstants,
+                    timeZoneId: offsetLabel,
                     orgLevel: orgLevelId || "",
                     task: taskId,
                     startDateTime: formatDateTime(startTime),
