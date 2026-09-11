@@ -1,10 +1,10 @@
 # T&M Journal - FSM Mobile Integration App
 
-A SAP Fiori mobile application for SAP Field Service Management (FSM), designed to run in FSM Mobile (Web Container), FSM Web UI (Shell Extension), or standalone browser. Features T&M (Time & Materials) reporting with automatic organization level resolution, context-aware activity highlighting, and configurable entry types.
+A SAP Fiori mobile application for SAP Field Service Management (FSM), designed to run in FSM Mobile (Web Container), FSM Web UI (Shell Extension), or standalone browser. Features T&M (Time & Materials) reporting with automatic organization level resolution, context-aware activity highlighting, per-user settings stored in FSM, and configurable entry types.
 
 > **Version:** 0.0.1  
 > **Platform:** SAP BTP Cloud Foundry  
-> **Last Updated:** February 2026
+> **Last Updated:** September 2026
 
 ---
 
@@ -32,6 +32,16 @@ The Expense/Mileage creation panels and inline tables are visibility-bound to
 > `typeconfig.json` is not durable — on the next redeploy the backend
 > `DEFAULT_CONFIG` and the frontend fallback would re-enable the old IDs.
 
+**The Type Configuration DIALOG is also dormant.** The footer settings button now opens
+**User Settings** instead. The dialog's code was not deleted — it lives in
+`webapp/controller/mixin/TMTypeConfigurationMixin.js`, is still mixed into the
+controller, and simply has no caller. See
+[Type Configuration (dormant)](#-type-configuration-dormant) for how to bring it back.
+
+> `TypeConfigService` itself is **not** dormant. It still runs at startup and classifies
+> every activity as Expense / Mileage / Time & Material. Only the editing UI is switched
+> off; the lists stay editable through the `/api/v1/*-type-config` endpoints.
+
 **What was deliberately left in place (for possible future re-enable):**
 
 - **Frontend creation/edit:** `TMExpenseMileageMixin.js`, expense/mileage branches in
@@ -40,8 +50,9 @@ The Expense/Mileage creation panels and inline tables are visibility-bound to
 - **Frontend retrieval/UI:** `FSMQueryService.js` (`getExpensesForActivity`,
   `getMileagesForActivity`), `ReportedItemsData.js`, `ExpenseTypeService.js`,
   Expense/Mileage panels in `TMCreateDialog_fragment.xml` and tables in `ProductGroups_fragment.xml`
-- **Type Config dialog:** `TypeConfigDialog_fragment.xml`, `TypeConfigService.js` add/remove
-  handlers, `configRoutes.js`, and the `TypeConfigStore.js` CRUD/reset methods
+- **Type Config dialog:** `TypeConfigDialog_fragment.xml`, `TMTypeConfigurationMixin.js`,
+  `TypeConfigService.js` add/remove handlers, `configRoutes.js`, and the
+  `TypeConfigStore.js` CRUD/reset methods
 - **Backend:** `entryRoutes.js` (`/create-expense`, `/update-expense/:id`, `/create-mileage`,
   `/update-mileage/:id`), `FSMService.js` (`createExpense`, `updateExpense`, `createMileage`,
   `updateMileage`, and the `Expense`/`Mileage` batch type-map entries)
@@ -56,12 +67,187 @@ expenseTypes: ["Z40000001", "Z40000007", "Z50000000"]
 mileageTypes: ["Z40000038", "Z40000008"]
 ```
 
-or add them back at runtime via the **Type Config** dialog (⚙️). No code needs to be
-re-written — the paths are dormant, not deleted.
+or add them back at runtime via the Type Config dialog once it is re-enabled. No code
+needs to be re-written — the paths are dormant, not deleted.
 
-> ⚠️ The **Reset** button in the Type Config dialog and the `/api/v1/reset-type-config`
-> endpoint reset to `DEFAULT_CONFIG`, which is now empty. After this change, "Reset"
-> means "disable Expense/Mileage," not "restore the old IDs."
+---
+
+## 👥 Activity Visibility: Organization Level Only
+
+**Activities are filtered by organization level and nothing else.** Every user who can
+open the app sees every activity of the service order that matches their organization
+level, whether or not they are its responsible or a supporting technician.
+
+The former **assignment filter** (responsible / supporting technician) was removed from
+`DataLoadingMixin._loadServiceCallActivities()`. Who may open the app at all is
+controlled in **FSM Admin via Policy Groups**, not in the app.
+
+| Condition | Result |
+|-----------|--------|
+| User has no resolved org level | No activities. Message: *No Organization Level Assigned* |
+| Activity's `orgLevelIds` matches the user's org level | Visible |
+| Activity's org level differs | Hidden, counted in the *activities hidden* toast |
+
+Removing the assignment filter also removed one `ActivityService.fetchActivityTechnicians()`
+call **per activity** from the initial load, so large service orders open noticeably faster.
+
+> `personIds` / `personExternalIds` are still resolved at startup and kept on
+> `/webContainerContext`. They no longer filter anything — they identify the user for
+> [User Settings](#-user-settings-fsm-udo).
+
+---
+
+## ⚙️ User Settings (FSM UDO)
+
+Each technician has their own settings record, stored in FSM as the **UDO
+`TMExt_UserSettings`**. The footer settings button opens the dialog.
+
+### What the dialog shows
+
+| Section | Content |
+|---------|---------|
+| **Available Settings** | One row per field the UDO can hold, in FSM's own field order. Setting = the field's `description`; Value = a dropdown of its selection list. Pre-filled with what the user saved, falling back to the field's default. |
+| **Your Saved Settings** | The user's own saved record, read-only. Other people's records are filtered out **server-side** and never reach the browser. |
+| **OK** | Creates the record, or updates the existing one. |
+
+### Nothing about the settings is hardcoded
+
+Everything a field does comes from its own `UdfMeta`, so a setting added in FSM tomorrow
+renders correctly with **no code change**:
+
+| FSM metadata | Drives |
+|--------------|--------|
+| `description` | the label in the Setting column |
+| `selectionKeyValues` | the dropdown options |
+| `defaultValue` | which option is preselected |
+| `referencedObjectType` | a `PERSON` field is filled with the logged-in user |
+
+The only exception is `KNOWN_FIELD_CONFIG` in `utils/FSMUdoService.js`, which covers the
+two things FSM's metadata cannot express for the always-present fields. It is keyed by
+the field's `externalId` and is **strictly additive** — a field with no entry still
+renders normally, and a stale key logs a warning rather than failing silently.
+
+```js
+const KNOWN_FIELD_CONFIG = {
+    'z_TM_DateType': { defaultCode: '2', role: 'ENTRY_DATE' },
+    'z_TM_PersonID': { fill: 'PERSON_EXTERNAL_ID' }
+};
+```
+
+> FSM's own `UdfMeta.defaultValue` always wins over `defaultCode`. Set the default in FSM
+> Admin and the config entry becomes removable.
+
+### selectionKeyValues and stored values
+
+FSM returns the list as `{ "<code>": "<display text>" }`, e.g.
+`{ "1": "Current date", "2": "Dispo date" }`. A **write stores the code** (`"1"`).
+Records created by hand in FSM may hold the display text instead, so reads accept either
+and translate to the text for display.
+
+### Reading
+
+Three queries, a fixed count no matter how many settings or records exist:
+
+```sql
+-- 1. the definition (fields, in order)
+SELECT w FROM UdoMeta w WHERE w.name = 'TMExt_UserSettings'
+
+-- 2. the stored records
+SELECT v FROM UdoValue v JOIN UdoMeta m ON v.meta = m
+WHERE m.name = 'TMExt_UserSettings'
+
+-- 3. ONE query resolving every UDF meta UUID from 1 and 2 together
+SELECT w FROM UdfMeta w WHERE w.id IN (...)
+```
+
+1 and 2 run in parallel, then 3 resolves the union. The resolution happens **server-side**
+on purpose: doing it from the browser would be one request per UUID — the N+1 pattern
+that caused the random-PENDING bug documented in `getApprovalStatusBatch`.
+
+> Filtering a UdoValue by one of its UDFs (`... AND v.udf.z_TM_PersonID = '...'`) is not
+> supported by the Query API. The person's record is matched in Node instead, against
+> data query 2 already returned — no extra round trip.
+
+### Writing (create *and* update)
+
+Both are a `PATCH`; only the target differs, and which one runs is decided by looking the
+person up first:
+
+| | Target | Why |
+|---|---|---|
+| **Update** | `/api/data/v4/UdoValue/{id}` | the record's own id, so a record created by hand in FSM (no `externalId`) is updated **in place** instead of duplicated |
+| **Create** | `/api/data/v4/UdoValue/externalId/{externalId}` | FSM upserts it |
+
+Both with `?dtos=UdoValue.10&account=..&company=..&forceUpdate=true` and the standard
+header block including `X-Client-ID` and `X-Client-Version`.
+
+The record externalId is derived, never stored anywhere else:
+
+```
+<UdoMeta id>_<person externalId>
+67F7CD54D1B24F4D8B7B715DEFAB472E_egleizds1
+```
+
+Unique per person per UDO, so two devices saving at once are idempotent — same key, no
+duplicates. Empty fields are skipped rather than written as `""`.
+
+```json
+{
+  "externalId": "67F7CD54D1B24F4D8B7B715DEFAB472E_egleizds1",
+  "meta": "67F7CD54D1B24F4D8B7B715DEFAB472E",
+  "udfValues": [
+    { "meta": { "externalId": "z_TM_PersonID" }, "value": "egleizds1" },
+    { "meta": { "externalId": "z_TM_DateType" }, "value": "2" }
+  ]
+}
+```
+
+### The person identity
+
+`z_TM_PersonID` is filled with the logged-in user's **Person externalId**, resolved once
+at startup — no extra lookup:
+
+```
+userName → User API (user id) → Person.userName  → id, externalId, firstName, lastName
+                              ↘ fallback: UnifiedPerson.userName
+                                (accounts where Person.userName holds the login name)
+```
+
+Whichever path answered is the one used. The table shows `firstName lastName`
+(`personDisplayName`) while the model keeps the `externalId` — that is what a save writes.
+A user with several identity rows (EMPLOYEE + ERPUSER) uses the first.
+
+### What the settings control
+
+| Setting | Code | Effect |
+|---------|------|--------|
+| **DateType** | `2` Dispo date | A new T&M entry defaults to the **activity's planned start date** (the long-standing behaviour) |
+| | `1` Current date | A new T&M entry defaults to **today**, in the company time zone |
+
+`/defaultDate` in the createTM model is the single place this is applied — **every** row
+type reads it (time AZ/FZ/WZ, material, expense, mileage), so `TMDialogService` sets it
+once from `UserSettingsService.resolveEntryDate()`.
+
+The setting is found **by role** (`ENTRY_DATE`), not by name. It falls back to the planned
+start date whenever the setting is missing, unreadable or unknown, so behaviour without
+settings is exactly what it was before they existed.
+
+> "Today" means today in the **company** time zone, not the device's — the same rule
+> `TimeZoneService` documents for time efforts. A technician's phone travelling abroad
+> must not move a workday onto a different calendar date.
+
+### Loading
+
+Two layers, no startup race:
+
+- **Warm** — fired right after the person resolves in `_loadOrganizationLevels()`
+  (fire-and-forget), so the first *Add Entry* does not wait.
+- **Guarantee** — `ensureLoaded()` joins the `Promise.allSettled` batch the creation
+  dialog already runs for tasks/items/expense types. Cached after the first call; a
+  failure only means the planned-date fallback.
+
+`UserSettingsService.clearCache()` is part of `_clearAllServiceCaches()`, so the Refresh
+button re-reads the settings too.
 
 ---
 
@@ -114,7 +300,7 @@ midnight. Both now resolve from one module:
 > phone happens to be, and the workday date is a payroll fact tied to the company, not to the
 > device. Using it would mean the same entry anchoring to a different real instant depending
 > on where it was typed. It is surfaced in the Context Info dialog purely so a wrong-day
-> report can be diagnosed at a glance.
+> report can be diagnosed at a glance. The same rule governs the *Current date* user setting.
 
 **Sourcing the zone externally (not currently done).** A `GET_SETTINGS` probe against
 `timeZone`, `timezone`, `TimeZone`, `companyTimeZone`, `CoreSystems.Company.TimeZone` and
@@ -212,6 +398,8 @@ different zone — informational, nothing computes against it.
 - [Overview](#-overview)
 - [Architecture](#-architecture)
 - [Features](#-features)
+- [T&M Entry Statuses](#-tm-entry-statuses)
+- [Activity T&M Summary](#-activity-tm-summary)
 - [Prerequisites](#-prerequisites)
 - [Setup & Deployment](#-setup--deployment)
 - [FSM Mobile Integration](#-fsm-mobile-integration)
@@ -229,15 +417,27 @@ different zone — informational, nothing computes against it.
 
 ## 📸 Screenshots
 
+Screenshot folder: `docs/screenshots/`
+
+> Some screenshots below show features that are currently **disabled or dormant**
+> (Expense, Mileage, Type Configuration). They are kept because the code behind them was
+> preserved rather than deleted — see the [Configuration Notice](#️-configuration-notice-expense--mileage-disabled)
+> and [Type Configuration (dormant)](#-type-configuration-dormant).
+
 ### 1. Main View - Session Context & Service Order
 
 ![Main View](docs/screenshots/01-main-view.png)
 
 | Element | Description | Key Files |
 |---------|-------------|-----------|
-| **Session Context Button (ℹ️)** | Opens Session Context dialog showing User, Language, Account, Company, Organization, Object Type | `View1_controller.js` → `onShowContextInfo()`, `ContextInfoDialog_fragment.xml` |
-| **Type Config Button (⚙️)** | Opens Type Configuration dialog | `View1_controller.js` → `onOpenTypeConfig()`, `TypeConfigDialog_fragment.xml` |
-| **Service Order Panel** | Expandable panel with Service Order details | `ServiceCall_fragment.xml` |
+| **Session Context Button (ℹ️)** | Opens Session Context dialog: User, Language, Account, Company, Organization, Object Type, time zone | `TimeMaterialExt.controller.js` → `onShowContextInfo()`, `ContextInfoDialog.fragment.xml` |
+| **User Settings Button (⚙️)** | Opens the User Settings dialog (FSM UDO `TMExt_UserSettings`) | `TMUserSettingMixin.js` → `onOpenUserSettings()`, `UserSettingsDialog.fragment.xml` |
+| **Refresh Button** | Clears every service cache and reloads | `TimeMaterialExt.controller.js` → `onRefresh()` |
+| **Service Order Panel** | Expandable panel with Service Order details | `ServiceCall.fragment.xml` |
+
+> The ⚙️ button previously opened Type Configuration. The control id
+> (`mobileAppTypeConfigButton`) was deliberately left unchanged so existing CSS keeps
+> matching — only its text and press handler changed.
 
 ---
 
@@ -247,13 +447,16 @@ different zone — informational, nothing computes against it.
 
 | Element | Description | Key Files |
 |---------|-------------|-----------|
-| **Product Group Headers** | Activities grouped by Service Product description | `ProductGroups_fragment.xml`, `ProductGroupService.js` |
-| **Activity Panel** | Expandable panel with activity details (3-column CSS Grid layout) | `ProductGroups_fragment.xml` |
+| **Product Group Headers** | Activities grouped by Service Product description | `ProductGroups.fragment.xml`, `ProductGroupService.js` |
+| **Activity Panel** | Expandable panel with activity details (3-column CSS Grid layout) | `ProductGroups.fragment.xml` |
 | **Context Highlighting** | Light blue border on entry activity | `style.css` → `.activityEntryPanel[data-highlighted="true"]` |
-| **T&M Summary** | Reported hours (AZ/FZ/WZ) and Material qty vs planned | `ProductGroups_fragment.xml`, `TMDataService.js` |
-| **T&M Tables** | Inline tables for Time/Material, Expense, Mileage (with sort, edit, delete) | `ProductGroups_fragment.xml` |
+| **T&M Summary** | Material qty and AZ/FZ/WZ hours, each coloured by the statuses behind it — see [Activity T&M Summary](#-activity-tm-summary) | `TMDataService.js` → `resolveSummaryState()`, `ProductGroups.fragment.xml`, `style.css` |
+| **T&M Tables** | Inline tables for Time/Material (with sort, filter, edit, delete) | `ProductGroups.fragment.xml`, `TMTableMixin.js` |
 | **Add Entry Button** | Opens T&M Creation dialog | `TMDialogService.js` → `openTMCreationDialog()` |
-| **Delete Selected Button** | Batch deletes selected PENDING or REVIEW entries | `TMTableMixin.js` → `onDeleteSelectedTM()` |
+| **Delete Selected Button** | Batch deletes selected **PENDING** or **CHANGE** entries | `TMTableMixin.js` → `onDeleteSelectedTM()` |
+
+> Every activity shown matches the user's organization level. The app no longer filters by
+> responsible/supporting technician — see [Activity Visibility](#-activity-visibility-organization-level-only).
 
 ---
 
@@ -263,57 +466,37 @@ different zone — informational, nothing computes against it.
 
 | Element | Description | Key Files |
 |---------|-------------|-----------|
-| **Activity Header** | Shows activity details (dates, duration, quantity) | `TMCreateDialog_fragment.xml` |
-| **Material Section** | Technician, Item, Quantity, Date, Remarks | `TMCreateDialog_fragment.xml`, `TMMaterialMixin.js` |
-| **Time Sections** | Arbeitszeit (AZ), Fahrzeit (FZ), Wartezeit (WZ) with Task dropdown | `TMCreateDialog_fragment.xml`, `TMTimeEntryMixin.js` |
+| **Activity Header** | Shows activity details (dates, duration, quantity) | `TMCreateDialog.fragment.xml` |
+| **Material Section** | Technician, Item, Quantity, Date, Remarks | `TMCreateDialog.fragment.xml`, `TMMaterialMixin.js` |
+| **Time Sections** | Arbeitszeit (AZ), Fahrzeit (FZ), Wartezeit (WZ) with Task dropdown | `TMCreateDialog.fragment.xml`, `TMTimeEntryMixin.js` |
 | **Multi-Technician** | MultiInput with token-based selection from activity technicians | `TechnicianService.js`, `TechnicianMixin.js` |
 | **Task Dropdown** | Filtered by category (AZ, FZ, WZ) | `TimeTaskService.js` |
+| **Date** | Pre-filled per the user's **DateType** setting: *Dispo date* → activity planned start, *Current date* → today | `TMDialogService.js` → `/defaultDate`, `UserSettingsService.resolveEntryDate()` |
 | **Repeat Date Range** | Checkbox + end date to create entries across multiple days | `TMTimeEntryMixin.js` |
 | **Save All** | Batch creates all Material + Time entries | `TMSaveMixin.js` |
 
-**Visibility:** Shows when Service Product ID is NOT in Expense or Mileage type lists.
-
-**Type Check:** `TypeConfigService.isTimeMaterialType(serviceProductId)`
+**Visibility:** shown for every Service Product ID while Expense/Mileage are disabled.
 
 ---
 
-### 4. T&M Creation Dialog - Expense
+### 4. T&M Creation Dialog - Expense *(disabled)*
 
 ![T&M Creation - Expense](docs/screenshots/04-tm-creation-expense.png)
 
-| Element | Description | Key Files |
-|---------|-------------|-----------|
-| **Expense Table** | Multi-row table for batch expense creation | `TMCreateDialog_fragment.xml` |
-| **Expense Type** | Pre-populated from activity Service Product | `TMExpenseMileageMixin.js` |
-| **External Amount** | Amount charged to customer (EUR) | `TMExpenseMileageMixin.js` |
-| **Internal Amount** | Internal cost amount (EUR) | `TMExpenseMileageMixin.js` |
-| **Technician Select** | Dropdown from activity technicians | `TMExpenseMileageMixin.js` |
-| **Date** | DatePicker, defaults to Activity Planned Start | `TMCreateDialog_fragment.xml` |
-
-**Visibility:** Shows when Service Product ID is in Expense type list.
-
-**Default IDs:** Z40000001, Z40000007, Z50000000
+Kept for reference — the Expense type list is empty, so this panel never appears.
+Code preserved in `TMExpenseMileageMixin.js` and the Expense panel of
+`TMCreateDialog.fragment.xml`.
 
 **Type Check:** `TypeConfigService.isExpenseType(serviceProductId)`
 
 ---
 
-### 5. T&M Creation Dialog - Mileage
+### 5. T&M Creation Dialog - Mileage *(disabled)*
 
 ![T&M Creation - Mileage](docs/screenshots/05-tm-creation-mileage.png)
 
-| Element | Description | Key Files |
-|---------|-------------|-----------|
-| **Mileage Table** | Multi-row table for batch mileage creation | `TMCreateDialog_fragment.xml` |
-| **Mileage Type** | Pre-populated from activity Service Product (Item) | `TMExpenseMileageMixin.js` |
-| **Distance** | Kilometers, pre-populated from activity quantity | `TMExpenseMileageMixin.js` |
-| **Travel Duration** | Minutes (default 30), used to calculate travelEnd from travelStart | `TMExpenseMileageMixin.js` |
-| **Technician Select** | Dropdown from activity technicians | `TMExpenseMileageMixin.js` |
-| **Date** | DatePicker, defaults to Activity Planned Start | `TMCreateDialog_fragment.xml` |
-
-**Visibility:** Shows when Service Product ID is in Mileage type list.
-
-**Default IDs:** Z40000038, Z40000008
+Kept for reference — the Mileage type list is empty, so this panel never appears.
+Code preserved alongside Expense.
 
 **Type Check:** `TypeConfigService.isMileageType(serviceProductId)`
 
@@ -325,44 +508,54 @@ different zone — informational, nothing computes against it.
 
 | Element | Description | Key Files |
 |---------|-------------|-----------|
-| **Time/Material Table** | Combined table with type filter (All / Time Effort / Material) | `ProductGroups_fragment.xml` |
-| **Expense Table** | Expense entries with amounts and type | `ProductGroups_fragment.xml` |
-| **Mileage Table** | Mileage entries with distance and duration | `ProductGroups_fragment.xml` |
-| **Approval Status** | Color-coded status (PENDING, APPROVED, DECLINED, REVIEW, REJECTED) | `ApprovalService.js` |
+| **Time/Material Table** | Combined table with type filter (All / Time Effort / Material) | `ProductGroups.fragment.xml` |
+| **Status Badge** | `PENDING`, `REVIEW`, `APPROVED`, `CHANGE`, `REJECTED`, `CANCELLED` — see [T&M Entry Statuses](#-tm-entry-statuses) | `ApprovalService.js`, `ProductGroups.fragment.xml` |
+| **Status Legend (ℹ️)** | Explains each status and what a supervisor action changes | `StatusLegendDialog.fragment.xml` |
 | **Decision Column** | Approver's decision remarks | `ApprovalService.js` → `getRemarksById()` |
+| **Row Selection** | Checkbox renders only for **PENDING** and **CHANGE** | `ProductGroups.fragment.xml` |
 | **Inline Edit** | Edit Selected → modify values → Save All (batch update) | `TMTableMixin.js` → `onSaveAllTM()` |
-| **Batch Delete** | Select rows via checkbox → Delete Selected. Works for entries in PENDING or REVIEW status. | `TMTableMixin.js` → `onDeleteSelectedTM()` |
-| **Sort** | Configurable sort dialog per table type | `TMSortDialog_fragment.xml` |
+| **Batch Delete** | Select rows → Delete Selected | `TMTableMixin.js` → `onDeleteSelectedTM()` |
+| **Sort & Filter** | Per-table dialog: status and technician | `TMSortDialog.fragment.xml` |
+
+> If this screenshot still shows a `DECLINED` badge, it predates the rename:
+> FSM `DECLINED` now displays as **CHANGE** and `DECLINED_CLOSED` as **REJECTED**.
 
 ---
 
-### 7. Type Configuration Dialog
+### 7. Type Configuration Dialog *(dormant)*
 
 ![Type Configuration](docs/screenshots/07-type-config.png)
 
-| Element | Description | Key Files |
-|---------|-------------|-----------|
-| **Info Message** | Explains how type configuration works | `TypeConfigDialog_fragment.xml` |
-| **Expense Types List** | Service Product IDs treated as Expense | `TypeConfigDialog_fragment.xml` |
-| **Mileage Types List** | Service Product IDs treated as Mileage | `TypeConfigDialog_fragment.xml` |
-| **Add Input** | Input field to add new type ID | `View1_controller.js` → `onAddExpenseType()`, `onAddMileageType()` |
-| **Remove Button** | Delete icon to remove type ID | `View1_controller.js` → `onRemoveExpenseType()`, `onRemoveMileageType()` |
-| **Reset Button** | Resets to default configuration | `View1_controller.js` → `onResetTypeConfig()` |
-
-**Backend:** `TypeConfigStore.js` (file storage), `/api/v1/*-type-config` endpoints (defined in `configRoutes.js`)
-
-**Frontend:** `TypeConfigService.js` (API client, type checking)
+No control opens this dialog any more — the ⚙️ button opens User Settings instead. The
+handlers live in `TMTypeConfigurationMixin.js` and the fragment is unchanged, so the
+screenshot stays valid for whenever it is re-enabled. See
+[Type Configuration (dormant)](#-type-configuration-dormant).
 
 ---
 
-### 8. Mobile Responsive View
+### 8. User Settings Dialog
+
+![User Settings](docs/screenshots/09-user-settings.png)
+
+| Element | Description | Key Files |
+|---------|-------------|-----------|
+| **Available Settings** | One row per field of the UDO, pre-filled with the user's saved choice or the field default | `TMUserSettingMixin.js` → `_loadUserSettingsIntoModel()` |
+| **Setting column** | The UDF's `description`, resolved from its meta UUID server-side | `FSMUdoService.js` → `buildLabel()` |
+| **Value column** | Dropdown of the UDF's selection list; plain text for other fields (a PERSON field shows `firstName lastName`) | `UserSettingsDialog.fragment.xml` |
+| **Saved indicator** | Green ✓ in the header when the user has a saved record | `UserSettingsDialog.fragment.xml` |
+| **Your Saved Settings** | The user's own record, read-only. Other people's records never reach the browser. | `FSMUdoService.js` → `getUserSettings(name, personExternalId)` |
+| **OK** | Creates the record, or updates the existing one | `TMUserSettingMixin.js` → `onSaveUserSetting()` |
+
+---
+
+### 9. Mobile Responsive View
 
 ![Mobile View](docs/screenshots/08-mobile-responsive.png)
 
 | Element | Description | Key Files |
 |---------|-------------|-----------|
 | **Responsive Layout** | CSS Grid `auto-fit, minmax(280px, 1fr)` adapts columns to screen width | `style.css` |
-| **Collapsed Panels** | Panels collapse to save space | All fragment XML files |
+| **Collapsed Panels** | Panels collapse to save space; the collapsed activity header carries its own T&M summary | `ProductGroups.fragment.xml` |
 | **Touch-friendly** | 44px minimum tap targets on touch devices | `style.css` |
 
 **Breakpoints:**
@@ -375,18 +568,17 @@ different zone — informational, nothing computes against it.
 
 ### Screenshot Checklist
 
-| # | Screenshot | Status |
-|---|------------|--------|
-| 1 | Main View (Session Context + Service Order) | ⬜ TODO |
-| 2 | Product Groups & Activities | ⬜ TODO |
-| 3 | T&M Creation - Time & Material | ⬜ TODO |
-| 4 | T&M Creation - Expense | ⬜ TODO |
-| 5 | T&M Creation - Mileage | ⬜ TODO |
-| 6 | T&M Tables (Inline) | ⬜ TODO |
-| 7 | Type Configuration Dialog | ⬜ TODO |
-| 8 | Mobile Responsive View | ⬜ TODO |
-
-**Screenshot folder:** `docs/screenshots/`
+| # | File | Shows | Status |
+|---|------|-------|--------|
+| 1 | `01-main-view.png` | Session Context + Service Order | ⚠️ Re-take — footer button is now **User Settings** |
+| 2 | `02-product-groups.png` | Product Groups & Activities | ⚠️ Re-take — summary colours are new |
+| 3 | `03-tm-creation-time-material.png` | T&M Creation - Time & Material | ✅ Still valid |
+| 4 | `04-tm-creation-expense.png` | T&M Creation - Expense | ✅ Reference only (disabled) |
+| 5 | `05-tm-creation-mileage.png` | T&M Creation - Mileage | ✅ Reference only (disabled) |
+| 6 | `06-tm-tables.png` | T&M Tables (Inline) | ⚠️ Re-take — `DECLINED` is now `CHANGE`, `DECLINED_CLOSED` is `REJECTED` |
+| 7 | `07-type-config.png` | Type Configuration Dialog | ✅ Reference only (dormant) |
+| 8 | `08-mobile-responsive.png` | Mobile Responsive View | ✅ Still valid |
+| 9 | `09-user-settings.png` | User Settings Dialog | ⬜ **Missing — new dialog** |
 
 ---
 
@@ -397,30 +589,22 @@ This application provides a mobile-optimized interface for viewing and managing 
 **Key Features:**
 - ✅ Progressive disclosure UI (Service Order → Product Groups → Activities → T&M Tables)
 - ✅ Organization level auto-resolution from logged-in user
+- ✅ Activities filtered by organization level only — access controlled by FSM Policy Groups
 - ✅ Activities grouped by Product Description
 - ✅ Auto-loads activity data from FSM Mobile web container context or FSM Web UI Shell context
 - ✅ Context activity highlighting (light blue SAP Fiori styling)
+- ✅ **Per-user settings stored in FSM** (UDO `TMExt_UserSettings`) — including which date a new entry defaults to
 - ✅ T&M entry creation and management:
   - **Time & Material** — Material entries + Time entries (AZ/FZ/WZ) with multi-technician and repeat dates
-  - **Expense** — Batch expense creation with type, amounts, and technician
-  - **Mileage** — Batch mileage creation with distance, duration, and technician
-- ✅ Inline T&M tables with edit, delete (PENDING/REVIEW), sort, and approval status tracking
-- ✅ **Configurable Entry Types** — Expense and Mileage Service Product IDs can be configured via UI
+  - **Expense** — Batch expense creation with type, amounts, and technician *(disabled)*
+  - **Mileage** — Batch mileage creation with distance, duration, and technician *(disabled)*
+- ✅ Inline T&M tables with edit, delete, sort, and approval status tracking
+- ✅ Activity summary with per-metric status colouring (Material / AZ / FZ / WZ)
 - ✅ Session context display (User, Account, Company, Organization)
 - ✅ Mobile-first responsive design (desktop, tablet, mobile)
 - ✅ **Two-path inbound authentication** — FSM Authentication Key (Mobile) and FSM JWT signature verification (Web UI), both backed by server-issued session tokens
 - ✅ **Outbound OAuth 2.0** to FSM APIs via SAP BTP Destination Service
 - ✅ Direct FSM Data API and Query API integration
-
-**Default Type Configuration:**
-| Type | Default Service Product IDs |
-|------|----------------------------|
-| Expense | _(disabled — empty; see [Configuration Notice](#️-configuration-notice-expense--mileage-disabled))_ |
-| Mileage | _(disabled — empty)_ |
-| Time & Material | **All IDs** (Expense/Mileage empty ⇒ everything routes here) |
-
-*Note: Type configuration can be modified at runtime via the "Type Config" button.
-Expense and Mileage are currently disabled by customer request.*
 
 **Technology Stack:**
 - **Frontend:** SAP UI5 (Fiori)
@@ -491,7 +675,7 @@ The application supports **multiple deployment contexts**:
 │  │  4. Product Groups → Activities (grouped view)                    │  │
 │  │  5. T&M Tables (inline view/edit/delete/sort)                     │  │
 │  │  6. T&M Creation Dialog (create new entries)                      │  │
-│  │  7. Type Config Dialog (configure entry types)                    │  │
+│  │  7. User Settings Dialog (per-user settings from FSM UDO)         │  │
 │  └───────────────────────────┬───────────────────────────────────────┘  │
 │                              │                                          │
 │  ┌───────────────────────────▼───────────────────────────────────────┐  │
@@ -502,6 +686,7 @@ The application supports **multiple deployment contexts**:
 │  │  - Context store + session store (in-memory, 30 min TTL)          │  │
 │  │  - requireSession middleware (cookie OR Bearer Authorization)     │  │
 │  │  - FSM API Proxy under /api/v1/* (FSMService.js)                  │  │
+│  │  - User Settings UDO read/write (FSMUdoService.js)                │  │
 │  │  - Type Config API: /api/v1/*-type-config (TypeConfigStore.js)    │  │
 │  │  - JWT validation against FSM JWKS (FSMJwtValidator.js)           │  │
 │  └───────────────────────────┬───────────────────────────────────────┘  │
@@ -520,6 +705,7 @@ The application supports **multiple deployment contexts**:
                       │  - User & Organization Data
                       │  - Service Calls (Composite Tree)
                       │  - Activities & T&M Reports
+                      │  - User Settings (UdoMeta / UdoValue / UdfMeta)
                       │  - Lookup Data (Tasks, Items, Expense Types, etc.)
                       └─────────────────┘
 ```
@@ -537,14 +723,16 @@ validator safety properties, threat model, and rotation procedures), see
 | Component | Description |
 |-----------|-------------|
 | **Session Context Dialog** | Opened from footer toolbar (ℹ️ button). Shows User, Language, Account, Company, Organization, Object Type/ID. |
+| **User Settings Dialog** | Opened from footer toolbar (⚙️ button). Per-user settings stored in FSM (UDO `TMExt_UserSettings`). |
 | **Service Order Panel** | Expandable panel showing Service Order details (ID, External ID, Subject, Business Partner, Responsible, Dates) |
 | **Organization Level** | Auto-resolved from logged-in user (no manual selection required) |
 | **Product Groups** | Activities grouped by Product Description with activity count |
 | **Activity Panels** | Expandable panels with context highlighting (blue border for entry activity), Address, Responsible, Org Level, Service Product, T&M Summary |
-| **T&M Summary** | For T&M activities: Material qty (reported/planned), Arbeitszeit/Fahrzeit/Wartezeit hours reported |
+| **T&M Summary** | Material qty (reported/planned) and Arbeitszeit/Fahrzeit/Wartezeit hours, each coloured by the statuses behind it |
 | **T&M Tables** | Inline tables per activity: Time/Material (combined with type filter), Expense, Mileage — with edit, delete, sort, approval status, row highlighting |
 | **T&M Creation Dialog** | Create new T&M entries based on Activity Service Product type |
-| **Type Config Dialog** | Configure which Service Product IDs are treated as Expense, Mileage, or Time & Material |
+| **Status Legend Dialog** | Explains every entry status and what a supervisor action changes |
+| **Type Config Dialog** | *Dormant* — see [Type Configuration (dormant)](#-type-configuration-dormant) |
 
 ### Lookup Services
 
@@ -561,31 +749,87 @@ The app resolves FSM IDs to human-readable names:
 | **OrganizationService** | Org Level ID → Name + User Resolution | `2B6F7485...` → `2130_MPA - Service Unit _Team1` |
 | **BusinessPartnerService** | BP ExternalId → Name | `55003748` → `Company Name (55003748)` |
 | **ApprovalService** | Object ID → Decision Status + Remarks | `F1E2D3C4...` → `APPROVED` |
+| **UserSettingsService** | UDO record → the user's settings | `z_TM_DateType` → `2` (Dispo date) |
 | **TypeConfigService** | Service Product ID → Entry Type | `Z40000001` → `Expense` |
 
-### T&M Entry Types (Creation)
+---
 
-Entry type shown depends on Activity Service Product. **Types are configurable via Type Config Dialog.**
+## 🏷️ T&M Entry Statuses
 
-| Entry Type | Default Service Product IDs | Key Fields |
-|------------|----------------------------|------------|
-| **Expense** _(disabled)_ | _(empty — was Z40000001, Z40000007, Z50000000)_ | Code preserved but inactive; see [Configuration Notice](#️-configuration-notice-expense--mileage-disabled) |
-| **Mileage** _(disabled)_ | _(empty — was Z40000038, Z40000008)_ | Code preserved but inactive |
-| **Time & Material** | **All IDs** | Material section (Item, Technician, Quantity, Date, Remarks) + Time sections (AZ/FZ/WZ with Task, Multi-Technician, Duration, Date, Repeat Date Range, Remarks) |
+Statuses come from the FSM **Approval** object (`decisionStatus`), fetched per entry via
+`POST /api/v1/get-approval-status` and cached in `ApprovalService`. There are **7 codes**,
+and the app renames two of them for display.
 
-*Note: Expense/Mileage are disabled by customer request (lists emptied). With both
-lists empty, every Service Product ID falls through to Time & Material. Types can be
-re-enabled at runtime via the "Type Config" button (⚙️) or by restoring the config defaults.*
+| FSM code | Badge in table | Colour | Row highlight | Selectable | Meaning |
+|---|---|---|---|---|---|
+| `PENDING` | `PENDING` | Warning (orange) | – | ✅ | Submitted, waiting for supervisor |
+| `REVIEW` | `REVIEW` | Error (red) | – | ❌ | Needs an additional review — locked |
+| `APPROVED` | `APPROVED` | Success (green) | Success | ❌ | Approved, syncs to ERP for billing |
+| `DECLINED` | **`CHANGE`** | Information (blue) | – | ✅ | Correction requested — editable, resubmit |
+| `DECLINED_CLOSED` | **`REJECTED`** | Error (red) | Error | ❌ | Rejected and closed — locked |
+| `APPROVED_CLOSED` | `APPROVED_CLOSED` | Success (green) | – | ❌ | Approved and closed |
+| `CANCELLED` | `CANCELLED` | None (grey) | Error | ❌ | Cancelled, no longer active |
 
-### T&M Table Columns (Viewing)
+The two renames are display logic in `ProductGroups.fragment.xml`:
 
-| Table | Columns |
-|-------|---------|
-| **Time/Material** | Select, Type Icon, Description, Technician, Time (hrs), Qty, Date, Remarks, Status, Decision |
-| **Expense** | Select, Expense Type, Technician, Ext. Amount, Int. Amount, Date, Remarks, Status, Decision |
-| **Mileage** | Select, Mileage Type, Technician, Distance (km), Duration (min), Date, Remarks, Status, Decision |
+```
+DECLINED        → shown as "CHANGE"
+DECLINED_CLOSED → shown as "REJECTED"
+```
 
-All tables support: batch selection (checkbox), inline edit mode, sort dialog, row highlighting by approval status (Success/Error/Warning).
+**What each status allows**
+
+- The **checkbox renders only for `PENDING` and `DECLINED`**, in all three tables. No
+  checkbox ⇒ the row cannot be selected, so it can be neither edited nor deleted.
+- **Edit Selected / Save All** and **Delete Selected** therefore work on `PENDING` +
+  `DECLINED` only. `onDeleteSelectedTM()` re-checks the status as a second gate.
+- **Saving an edit resets the decision server-side** (typically `DECLINED` → `PENDING`).
+  The batch response does not carry the new status, so `TMTableMixin` re-fetches it per
+  saved entry and updates the badge in place.
+- **No approval record** → `ApprovalService.getStatusById()` returns `null` and the
+  enrichment falls back to `'PENDING'`, so a freshly created entry stays deletable.
+
+---
+
+## 📊 Activity T&M Summary
+
+Each activity shows four metrics — **Material, Arbeitszeit, Fahrzeit, Wartezeit** — both
+in the collapsed panel header and in the expanded detail block.
+
+### Totals
+
+`REJECTED` (`DECLINED_CLOSED`) entries **do not count**. They still appear in the tables
+and still count toward the entry count — only the summary ignores them.
+
+### Colour, per metric
+
+Decided in one place, `TMDataService.resolveSummaryState()`. First match wins:
+
+| # | Condition | State | Colour |
+|---|---|---|---|
+| 1 | any entry is **CHANGE** (`DECLINED`) | `Error` | 🔴 red |
+| 2 | any entry is **PENDING** or **REVIEW** | `Warning` | 🟠 orange |
+| 3 | nothing left after ignoring REJECTED — no entries, or all REJECTED | `None` | ⚪ grey |
+| 4 | everything else — all **APPROVED** (and/or REJECTED) | `Success` | 🟢 green |
+
+The status sets are named constants at the top of `TMDataService.js`:
+
+```js
+const IGNORED_STATUSES = ["DECLINED_CLOSED"];
+const RED_STATUSES     = ["DECLINED"];            // CHANGE
+const ORANGE_STATUSES  = ["PENDING", "REVIEW"];
+```
+
+The view only **binds** the resulting `ValueState` — it never evaluates statuses itself.
+`ObjectNumber` takes red/orange/green from its own `state`; the labels (and the grey case)
+are coloured by CSS through a bound `data-tmstate` attribute, because `class` cannot be
+bound in XML views.
+
+> **Ordering trap:** totals used to be computed in `loadTMReports()`, which runs *before*
+> `_enrichTMReports()` attaches `decisionStatus`. `updateActivityWithTMData()` now
+> recalculates from the enriched reports — that is what the exclusion and colour rules need.
+> `TMDataService.refreshActivitySummary()` exists for in-place changes (e.g. after a delete)
+> that do not go through a full reload.
 
 ---
 
@@ -639,6 +883,21 @@ In addition to API access (above), the FSM tenant must be configured to enable i
 |---------|-------|-------|
 | **Web Container Authentication Key** | FSM Admin → Companies → [Company] → Web Containers → [Web Container Name] → Authentication Key | Must byte-exactly match the `FSM_WEBCONTAINER_AUTH_KEY` env var |
 
+### FSM User Settings UDO:
+
+The User Settings dialog reads and writes a **User Defined Object**:
+
+| Setting | Where | Value |
+|---------|-------|-------|
+| **UDO name** | FSM Admin → Custom Objects | `TMExt_UserSettings` |
+| **Person field** | a UDF on that UDO | `z_TM_PersonID` — holds the technician's Person externalId |
+| **Date field** | a UDF on that UDO | `z_TM_DateType` — selection list `{ "1": "Current date", "2": "Dispo date" }` |
+
+Adding further UDFs needs **no app change** — they appear in the dialog automatically. To
+give a new field a preselected value, set its `defaultValue` in FSM Admin. Only the two
+fields above are named in code (`KNOWN_FIELD_CONFIG` in `utils/FSMUdoService.js`), and only
+because FSM's metadata cannot express what the app needs from them.
+
 ### FSM Access:
 - SAP Field Service Management instance
 - API access credentials (OAuth client) for outbound calls
@@ -647,7 +906,10 @@ In addition to API access (above), the FSM tenant must be configured to enable i
   - Activities & Service Calls (read/write)
   - T&M entries: Time Effort, Material, Expense, Mileage (read/write/create)
   - Organization levels (read)
+  - User Defined Objects: `UdoMeta`, `UdoValue`, `UdfMeta` (read/write)
   - Lookup data (TimeTasks, Items, ExpenseTypes, Persons)
+- **Policy Groups** configured to control who may open the app — the app itself no longer
+  filters activities by assignment
 
 ### Optional (for FSM Web UI Integration):
 - FSM Shell SDK access (loaded dynamically from `https://unpkg.com/fsm-shell@1.20.0`)
@@ -683,11 +945,7 @@ With both lists empty, every Service Product ID routes to Time & Material.
 > ephemeral, so on restart/redeploy the backend falls back to `DEFAULT_CONFIG` in
 > `config/TypeConfigStore.js`, and the frontend falls back to `DEFAULT_EXPENSE_TYPES` /
 > `DEFAULT_MILEAGE_TYPES` in `TypeConfigService.js` on API failure. All three are
-> currently emptied together. To re-enable, restore the original IDs
-> (`["Z40000001","Z40000007","Z50000000"]` / `["Z40000038","Z40000008"]`) in all three,
-> or add them at runtime via the Type Config dialog.
-
-*Note: These can also be changed at runtime via the Type Config dialog.*
+> currently emptied together.
 
 > **Account and company:** These are not configured here. They come from the BTP destination's additional properties (`account` and `company`) — see Step 3. The application throws a clear startup error if either value is missing from the destination, so configuration mistakes surface immediately instead of silently using wrong credentials.
 
@@ -711,6 +969,9 @@ Additional Properties:
   URL.headers.X-Client-ID: FSM_Extension
   URL.headers.X-Client-Version: 0.0.1
 ```
+
+> `X-Client-ID` and `X-Client-Version` are sent on every FSM call, including the User
+> Settings `PATCH`.
 
 ### 4. Create Destination Service Instance
 ```bash
@@ -801,7 +1062,7 @@ When opened from FSM Mobile, the web container POSTs context data to `/web-conta
 | `authenticationKey` | Shared secret from the Authentication Key field above. Validated server-side via constant-time comparison. Mismatches return HTTP 401. |
 | `cloudId` | Activity/ServiceCall ID (used to load and highlight the entry) |
 | `objectType` | Object type (`ACTIVITY` or `SERVICECALL`) |
-| `userName` | Current user's name (for organization level auto-resolution) |
+| `userName` | Current user's name (for organization level and person resolution) |
 | `cloudAccount` | FSM account name |
 | `companyName` | FSM company name |
 | `language` | User's language preference |
@@ -894,8 +1155,6 @@ https://com.tns.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com?servic
 > **Important — current limitation:** With strict authentication enabled on `/api/v1/*`, standalone mode loads the page but cannot fetch any data. All API calls return HTTP 401 because no auth path was established (the Mobile flow needs the Authentication Key POST; the Web UI flow needs the Shell SDK's JWT). The page renders with empty caches and broken data.
 > 
 > Standalone mode is therefore now a **page-load-only** development convenience. It's useful for iterating on pure-frontend UI work (CSS, layout, view structure) but not for any workflow that depends on FSM data. For full end-to-end testing, launch from FSM Mobile or FSM Web UI.
-> 
-> If a development bypass for backend auth becomes needed, it should be implemented as a clearly-named environment variable (e.g., `DEV_BYPASS_AUTH=true`) that is **never** set on production environments.
 
 ### Local Development
 ```bash
@@ -912,8 +1171,6 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
 > 
 > The `npm run start:dev` Fiori dev server doesn't start the backend, so it doesn't need the env var — but `/api/v1/*` calls won't work in that mode either.
 
-*Note: `npm start` runs the full app (Express serves both API and UI). `npm run start:dev` runs only the UI5 Fiori dev server — backend API endpoints will not be available.*
-
 ---
 
 ## ✅ Expected Result
@@ -928,35 +1185,26 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
    - Organization (auto-resolved from user)
    - Object Type & ID
 6. Organization level auto-resolved (no manual selection)
-7. Context activity highlighted with **light blue SAP Fiori border** and auto-expanded
-8. Product Groups show activities grouped by Service Product
-9. **Type Config** button (⚙️) available in footer toolbar for configuring entry types
+7. All activities of the service order matching that org level are shown
+8. Context activity highlighted with **light blue SAP Fiori border** and auto-expanded
+9. Product Groups show activities grouped by Service Product
+10. **User Settings** button (⚙️) available in footer toolbar
 
 ### On FSM Web UI:
 1. User opens an Activity or Service Call
 2. Clicks **"T&M Journal"** extension button
 3. App opens in iframe within FSM Web UI
 4. Frontend captures the FSM-issued JWT from the Shell SDK and POSTs it to `/api/v1/shell-session-init`; backend verifies the JWT signature against FSM's JWKS and returns a session token, which the frontend attaches as `Authorization: Bearer` on subsequent calls
-5. Same functionality as Mobile:
-   - Session Context from fsm-shell SDK
-   - Auto-resolved organization level
-   - Context highlighting
-   - Full T&M viewing and creation
-
-### In Standalone Mode:
-1. Open app URL with parameter: `?activityId=XXX` or `?serviceCallId=XXX`
-2. Page loads and the URL parameter selects the intended object
-3. **All `/api/v1/*` calls return HTTP 401** because no auth path was established (no Authentication Key POST, no Shell JWT). Caches stay empty, no FSM data populates.
-4. Standalone mode is now a page-load-only development convenience for pure-frontend UI work. For full functionality, launch from FSM Mobile or FSM Web UI.
+5. Same functionality as Mobile
 
 ### T&M Creation Flow:
 1. Click **"Add Entry"** button on an Activity panel
-2. Dialog opens based on Activity's Service Product type:
-   - **Expense table** → for configured Expense type IDs
-   - **Mileage table** → for configured Mileage type IDs
-   - **Time & Material form** → for all other IDs (Material table + AZ/FZ/WZ time tables)
-3. Fill required fields and click **Save All**
-4. Dialog closes, entries created in FSM, and inline T&M table refreshes automatically
+2. Dialog opens based on Activity's Service Product type (Time & Material for all IDs while Expense/Mileage are disabled)
+3. Each added row is pre-dated according to the user's **DateType** setting:
+   - *Dispo date* → the activity's planned start date
+   - *Current date* → today
+4. Fill required fields and click **Save All**
+5. Dialog closes, entries created in FSM, and inline T&M table refreshes automatically
 
 ### T&M Edit Flow:
 1. Click **"Edit Selected"** on a T&M table to enable inline edit mode for selected rows
@@ -964,9 +1212,15 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
 3. Click **Save All** — batch-updates all edited entries via `/api/v1/batch-update`
 
 ### T&M Delete Flow:
-1. Select rows via checkbox (entries with **PENDING** or **REVIEW** status are selectable)
+1. Select rows via checkbox — entries in **PENDING** or **CHANGE** status are selectable
 2. Click **"Delete Selected"** — confirmation dialog appears
 3. Confirm — entries are batch-deleted via `/api/v1/batch-delete`, table refreshes, count updates
+
+### User Settings Flow:
+1. Click the **⚙️** button in the footer toolbar
+2. *Available Settings* shows every setting, pre-filled with the user's saved choice (or the default)
+3. Change a value and press **OK** — the record is created, or the existing one updated
+4. *Your Saved Settings* below reflects the result
 
 ---
 
@@ -1002,10 +1256,12 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
               ┌──────────────────────────────┐
               │   App Initialization         │
               │   1. Resolve user org level  │
-              │   2. Load Service Call       │
-              │   3. Load Activities         │
-              │   4. Load T&M data           │
-              │   5. Highlight context entry │
+              │      + person identity       │
+              │   2. Warm user settings      │
+              │   3. Load Service Call       │
+              │   4. Load Activities         │
+              │   5. Load T&M data           │
+              │   6. Highlight context entry │
               └──────────────────────────────┘
 ```
 
@@ -1017,296 +1273,15 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
 | 2 | User taps/clicks "T&M Journal" | App opens (web container/iframe) |
 | 3 | Inbound authentication | Mobile: Auth Key validated, `fsm_session` cookie issued. Web UI: JWT verified against FSM JWKS, session token returned and stored as Bearer header in `window.__fsmSessionToken`. |
 | 4 | Context received | `ContextService` detects source and extracts Activity/ServiceCall ID |
-| 5 | User org resolved | `userName` → User API → Person Query → Org Level assignment |
-| 6 | Session Context displayed | Available via ℹ️ button in footer toolbar (User, Language, Account, Company, Organization) |
-| 7 | Service Order loaded | Composite-tree API fetches Service Call + Activities |
-| 8 | Product Groups rendered | Activities grouped by Service Product description |
-| 9 | Context entry highlighted | Light blue border, auto-expanded |
-| 10 | T&M data loaded | Time Effort, Material, Expense, Mileage entries loaded into inline tables |
-| 11 | User views/creates T&M | Entry type determined by Service Product (configurable) |
-
-### Context Sources:
-
-#### FSM Mobile (Web Container)
-```
-POST /web-container-access-point
-{
-  "authenticationKey": "<shared-secret-matching-FSM_WEBCONTAINER_AUTH_KEY>",
-  "cloudId": "9D92E0B18FDC4A27A213401FEEA89FDA",
-  "objectType": "ACTIVITY",
-  "userName": "Max Mustermann",
-  "cloudAccount": "company_account",
-  "companyName": "Company Name",
-  "language": "de"
-}
-```
-
-The server validates `authenticationKey` via constant-time comparison. On success,
-an HttpOnly `fsm_session` cookie is set on the response and the user is redirected
-to the loaded app.
-
-#### FSM Web UI (Shell SDK)
-```javascript
-// Stage 1: REQUIRE_CONTEXT response (session data + auth token)
-{
-  "userId": "USER-UUID",
-  "user": "Max Mustermann",
-  "company": "Company Name",
-  "companyId": "COMPANY-UUID",
-  "account": "account_name",
-  "accountId": "ACCOUNT-UUID",
-  "cloudHost": "https://eu.coresystems.net",
-  "selectedLocale": "de",
-  "auth": { "access_token": "<RS256-signed FSM JWT>" }
-}
-
-// Stage 2: ViewState events (received via onViewState listeners)
-// Activity: { "id": "ACTIVITY-UUID" }
-// ServiceCall: { "id": "SERVICECALL-UUID" }
-
-// Stage 3: Backend session establishment
-// Frontend POSTs the JWT to /api/v1/shell-session-init.
-// Backend verifies signature against FSM JWKS, returns:
-//   { "success": true, "sessionToken": "<opaque-token>", ... }
-// Frontend stores sessionToken on window.__fsmSessionToken; the global fetch
-// wrapper attaches it as Authorization: Bearer on all subsequent /api/v1/* calls.
-```
-
-#### Standalone (URL Parameters)
-```
-?activityId=9D92E0B18FDC4A27A213401FEEA89FDA
-# or
-?serviceCallId=ABC123DEF456...
-```
-
-> Standalone mode loads the page but does not authenticate. All `/api/v1/*` calls
-> return 401, so no FSM data populates. Used only for pure-frontend UI iteration.
-
-### Authentication Flow:
-
-The application has two distinct authentication concerns: **inbound** (FSM/Web UI
-→ your app) and **outbound** (your app → FSM API). The flows below cover each.
-
-#### Inbound (FSM Mobile or Web UI → app)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Mobile: POST /web-container-access-point with Auth Key         │
-│      OR                                                         │
-│  Web UI: POST /api/v1/shell-session-init with access_token JWT  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Mobile: constant-time compare against FSM_WEBCONTAINER_AUTH_KEY│
-│  Web UI: verify JWT signature against FSM JWKS endpoint         │
-│           (FSMJwtValidator.js, RS256 only, 24h key cache)       │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Generate 32-byte session token, store in sessionStore (30 min) │
-│  Mobile: set as HttpOnly fsm_session cookie                     │
-│  Web UI: return in JSON body, frontend stores in memory         │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Subsequent /api/v1/* calls authenticated via:                  │
-│  - cookie (Mobile flow)                                         │
-│  - Authorization: Bearer header (Web UI flow)                   │
-│  requireSession middleware accepts either                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-For the full inbound auth model (threat model, rotation procedures, why not XSUAA),
-see [docs/SECURITY.md](docs/SECURITY.md).
-
-#### Outbound (app → FSM API)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  1. Read VCAP_SERVICES → Get Destination Service credentials    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  2. Call BTP Destination Service → Get OAuth token              │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  3. Fetch FSM_S4E destination → Get FSM URL + OAuth config      │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  4. Get FSM OAuth token → Authenticate with FSM API             │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  5. Token cached (TokenCache.js) → Reused until 5 min before    │
-│     expiry (default token lifetime: 60 min)                     │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  6. Make FSM API calls → Activities, T&M, Lookups, etc.         │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Type Configuration Flow:
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  User clicks "Add Entry" on Activity                            │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Get Activity's Service Product External ID                     │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  TypeConfigService.isExpenseType(id) ?                          │
-│  TypeConfigService.isMileageType(id) ?                          │
-│  Otherwise → Time & Material                                    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Open creation dialog with appropriate tab:                     │
-│  • Expense table (Expense Type, Technician, Amounts, Date)      │
-│  • Mileage table (Mileage Type, Technician, Distance, Duration) │
-│  • T&M form (Material table + AZ/FZ/WZ time entry tables)       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📁 Project Structure
-```
-com.tns.fsm.timematerialext.app/
-│
-├── # ─────────── ROOT LEVEL ───────────
-├── index.js                             # Express server, inbound auth (Auth Key + JWT), session store, /api/v1 routes (~150 lines)
-├── routes/
-│   ├── activityRoutes.js                # Activity CRUD & reported items (~155 lines)
-│   ├── configRoutes.js                  # Type configuration endpoints (~240 lines)
-│   ├── entryRoutes.js                   # T&M entry batch & individual CRUD (~430 lines)
-│   └── lookupRoutes.js                  # Person, org, lookup, approval, user (~275 lines)
-├── package.json                         # Node.js dependencies (express, cookie-parser, jsonwebtoken, jwks-rsa)
-├── package-lock.json                    # Dependency lock file
-├── manifest.yaml                        # Cloud Foundry deployment
-├── mta.yaml                             # Multi-Target Application descriptor
-├── xs-app.json                          # App Router configuration
-├── xs-security.json                     # Security configuration
-├── ui5.yaml                             # UI5 tooling configuration
-├── ui5-local.yaml                       # UI5 local development config
-├── ui5-deploy.yaml                      # UI5 deployment config
-├── config/
-│   ├── TypeConfigStore.js                   # Backend type config storage (~280 lines)
-│   └── typeconfig.json                      # Expense/Mileage type configuration
-├── .gitignore                           # Git ignore rules
-├── README.md                            # This file
-│
-├── # ─────────── DOCUMENTATION ───────────
-├── docs/
-│   ├── SECURITY.md                      # Inbound auth architecture, threat model, rotation procedures
-│   └── screenshots/                     # App screenshots for documentation
-│
-├── # ─────────── BACKEND SERVICES ───────────
-├── utils/
-│   ├── DestinationService.js            # BTP Destination handling (~90 lines)
-│   ├── FSMService.js                    # FSM API core: HTTP methods, CRUD, batch (~700 lines)
-│   ├── FSMLookupService.js              # FSM lookup, approval, person, org, user (~475 lines)
-│   ├── FSMQueryService.js               # FSM T&M entry retrieval queries (~255 lines)
-│   ├── FSMJwtValidator.js               # FSM JWT signature verification against JWKS (Web UI auth) (~70 lines)
-│   └── TokenCache.js                    # OAuth token caching (~110 lines)
-│
-└── # ─────────── FRONTEND (SAP UI5) ───────────
-webapp/
-│
-├── # ─────────── ENTRY POINTS ───────────
-├── index.html                       # App entry point
-├── simple.html                      # Simple test page
-├── manifest.json                    # UI5 app descriptor
-├── Component.js                     # UI5 Component + global fetch wrapper (cookies, Bearer header) (~95 lines)
-├── appconfig.json                   # App configuration
-├── _appGenInfo.json                 # Generator info
-│
-├── # ─────────── VIEWS & FRAGMENTS ───────────
-├── view/
-│   ├── App.view.xml                 # Root view
-│   ├── View1.view.xml               # Main view (T&M Journal page)
-│   └── fragments/
-│       ├── ContextInfoDialog.fragment.xml    # Session Context info dialog (~70 lines)
-│       ├── ProductGroups.fragment.xml        # Activity panels with T&M tables (~370 lines)
-│       ├── ServiceCall.fragment.xml          # Service Order header panel (~70 lines)
-│       ├── StatusLegendDialog.fragment.xml   # Approval-status legend dialog
-│       ├── TMCreateDialog.fragment.xml       # T&M Creation dialog (~680 lines)
-│       ├── TMSortDialog.fragment.xml         # T&M Sort options dialog (~20 lines)
-│       └── TypeConfigDialog.fragment.xml     # Type Configuration dialog (~120 lines)
-│
-├── # ─────────── CONTROLLERS & MIXINS ───────────
-├── controller/
-│   ├── App.controller.js            # Root controller
-│   ├── View1.controller.js          # Main controller, sync onInit + async _initializeAsync sequencing (~725 lines)
-│   └── mixin/
-│       ├── DataLoadingMixin.js      # Data loading, batch T&M loading (~700 lines)
-│       ├── TechnicianMixin.js       # Technician/task selection (~150 lines)
-│       ├── TMDialogMixin.js         # T&M dialog open/enrichment (~405 lines)
-│       ├── TMEditMixin.js           # Individual entry edit handlers (~750 lines)
-│       ├── TMExpenseMileageMixin.js # Expense & Mileage creation (~525 lines)
-│       ├── TMMaterialMixin.js       # Material entry creation (~195 lines)
-│       ├── TMSaveMixin.js           # Batch save (new entries from creation dialog) (~470 lines)
-│       ├── TMTableMixin.js          # Table filter/sort + Edit Selected/Save All + Delete Selected (~1175 lines)
-│       └── TMTimeEntryMixin.js      # Time entry creation with repeat (~365 lines)
-│
-├── # ─────────── FRONTEND SERVICES ───────────
-├── utils/
-│   ├── helpers/
-│   │   ├── DateTimeService.js       # Date/time utilities + DST-aware zone helpers (~340 lines)
-│   │   ├── ProductGroupService.js   # Activity grouping by product (~130 lines)
-│   │   ├── ReportedItemsData.js     # T&M data fetching (~55 lines)
-│   │   └── URLHelper.js             # Web container context handling (~230 lines)
-│   │
-│   ├── services/
-│   │   ├── ActivityService.js       # Activity data management (~125 lines)
-│   │   ├── ApprovalService.js       # Approval status & remarks lookup (~210 lines)
-│   │   ├── BusinessPartnerService.js# Business partner lookup (~130 lines)
-│   │   ├── CacheService.js          # Startup cache warming (~225 lines)
-│   │   ├── ContextService.js        # Web container & Shell context detection, /api/v1/shell-session-init flow (~545 lines)
-│   │   ├── ExpenseTypeService.js    # Expense type ID lookup (~170 lines)
-│   │   ├── ItemService.js           # Item ID/ExternalId lookup (~260 lines)
-│   │   ├── OrganizationService.js   # Organization level + user resolution (~270 lines)
-│   │   ├── PersonService.js         # Person ID/name lookup (~280 lines)
-│   │   ├── ServiceOrderService.js   # Service order/composite tree (~95 lines)
-│   │   ├── TechnicianService.js     # Technician suggestions (~240 lines)
-│   │   ├── TimeTaskService.js       # Time task ID lookup (~195 lines)
-│   │   ├── TimeZoneService.js       # Company time zone: single source of truth (~140 lines)
-│   │   ├── TypeConfigService.js     # Expense/Mileage type config (~320 lines)
-│   │   └── UdfMetaService.js        # UDF Meta ID lookup (~180 lines)
-│   │
-│   └── tm/
-│       ├── TMCreationService.js     # T&M entry creation (~490 lines)
-│       ├── TMDataService.js         # T&M data loading & model update (~155 lines)
-│       ├── TMDialogService.js       # T&M dialog management (~485 lines)
-│       ├── TMEditService.js         # T&M entry editing (~180 lines)
-│       └── TMPayloadService.js      # T&M API payload building (~490 lines)
-│
-├── # ─────────── MODEL ───────────
-├── model/
-│   ├── formatter.js                 # Date/number/type formatting (~245 lines)
-│   └── models.js                    # Device model
-│
-├── # ─────────── STYLES ───────────
-├── css/
-│   └── style.css                    # Custom styles (~785 lines)
-│
-├── # ─────────── IMAGES ───────────
-├── images/
-│   ├── favicon.png                      # Browser tab favicon (32x32, from logo)
-│   └── TUEVNORD_Logo.png               # Customer logo
-│
-├── # ─────────── TEST ───────────
-├── test/                            # Test files
-│
-└── # ─────────── I18N ───────────
-└── i18n/
-    ├── i18n.properties              # English translations (~900 lines)
-    └── i18n_de.properties           # German translations (~900 lines)
-```
+| 5 | User resolved | `userName` → User API → Person (or UnifiedPerson fallback) → org level, personIds, personExternalIds, firstName/lastName |
+| 6 | User settings warmed | `UserSettingsService.ensureLoaded()` fired for the resolved person |
+| 7 | Session Context displayed | Available via ℹ️ button in footer toolbar |
+| 8 | Service Order loaded | Composite-tree API fetches Service Call + Activities |
+| 9 | Activities filtered | Organization level only |
+| 10 | Product Groups rendered | Activities grouped by Service Product description |
+| 11 | Context entry highlighted | Light blue border, auto-expanded |
+| 12 | T&M data loaded | Entries loaded into inline tables; summary totals and colours computed after enrichment |
+| 13 | User views/creates T&M | New rows pre-dated per the user's DateType setting |
 
 ---
 
@@ -1338,8 +1313,14 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 #### User & Organization
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/get-user-org-level` | Resolve user's organization level (userName → orgLevel) |
+| POST | `/api/v1/get-user-org-level` | Resolve user's organization level and person identity (id, externalId, firstName, lastName) |
 | GET | `/api/v1/get-organization-levels-full` | Fetch full organization hierarchy |
+
+#### User Settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/get-user-settings` | UDO definition + records. `?personExternalId=…` restricts records to that person's own record (zero or one). |
+| POST | `/api/v1/save-user-setting` | Create or update one person's settings record. Body: `{ personExternalId, values: [ { externalId, value } ] }` |
 
 #### T&M Data
 | Method | Endpoint | Description |
@@ -1386,6 +1367,9 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 | POST | `/api/v1/remove-mileage-type` | Remove mileage type ID |
 | POST | `/api/v1/reset-type-config` | Reset to default configuration |
 
+> The Type Configuration endpoints remain live even though the dialog is dormant — the
+> Expense/Mileage lists can still be maintained through them.
+
 > **API versioning policy:** All routes are mounted under `/api/v1/*` per the
 > Programmierrichtlinie §7. When breaking changes are required in the future,
 > they will be exposed as `/api/v2/*` alongside `/api/v1/*` — never replacing
@@ -1396,75 +1380,162 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 | API | Endpoint | Purpose |
 |-----|----------|---------|
 | **Data API v4** | `/api/data/v4/Activity` | Activity CRUD |
+| **Data API v4** | `/api/data/v4/UdoValue` | User settings create/update (by id, or by externalId with `forceUpdate=true`) |
 | **Data API v4** | `/api/data/v4/TimeTask` | Time task lookup |
 | **Data API v4** | `/api/data/v4/ExpenseType` | Expense type lookup |
-| **Query API v1** | `/api/query/v1` | TimeEffort, Material, Expense, Mileage, Item, UdfMeta, Person, BusinessPartner, Approval queries |
+| **Query API v1** | `/api/query/v1` | TimeEffort, Material, Expense, Mileage, Item, UdfMeta, UdoMeta, UdoValue, Person, UnifiedPerson, BusinessPartner, Approval queries |
 | **Batch API v1** | `/api/data/batch/v1` | Batch create/update/delete operations |
 | **Service Management v2** | `/api/service-management/v2/composite-tree` | Service call with activities |
-| **User API** | `/api/user` | User data lookup (for org level resolution) |
+| **User API** | `/api/user` | User data lookup (for org level and person resolution) |
 | **Org Level Service v1** | `/cloud-org-level-service/api/v1/levels` | Organization hierarchy |
 | **OAuth Token Endpoint** | `/api/oauth2/v2/token` | OAuth2 client credentials flow (via BTP Destination Service) |
 | **JWKS Endpoint** | `/api/oauth2/v2/.well-known/jwks.json` | FSM public keys for inbound JWT verification (Web UI flow). Default region: DE. Override via `FSM_JWKS_URL`. |
 
-### Key Files
+---
 
-#### Backend (Node.js/Express)
+## 📁 Project Structure
+```
+com.tns.fsm.timematerialext.app/
+│
+├── # ─────────── ROOT LEVEL ───────────
+├── index.js                             # Express server, inbound auth (Auth Key + JWT), session store, /api/v1 routes
+├── routes/
+│   ├── activityRoutes.js                # Activity CRUD & reported items
+│   ├── configRoutes.js                  # Type configuration endpoints
+│   ├── entryRoutes.js                   # T&M entry batch & individual CRUD
+│   └── lookupRoutes.js                  # Person, org, lookup, approval, user, USER SETTINGS
+├── package.json                         # Node.js dependencies
+├── manifest.yaml / mta.yaml             # Cloud Foundry deployment
+├── xs-app.json / xs-security.json       # App Router / security configuration
+├── ui5*.yaml                            # UI5 tooling configuration
+├── config/
+│   ├── TypeConfigStore.js               # Backend type config storage
+│   └── typeconfig.json                  # Expense/Mileage type configuration
+├── README.md                            # This file
+│
+├── # ─────────── DOCUMENTATION ───────────
+├── docs/
+│   ├── SECURITY.md                      # Inbound auth architecture, threat model, rotation
+│   └── screenshots/                     # App screenshots for documentation
+│
+├── # ─────────── BACKEND SERVICES ───────────
+├── utils/
+│   ├── DestinationService.js            # BTP Destination handling
+│   ├── FSMService.js                    # FSM API core: HTTP methods, CRUD, batch, makeQueryRequest
+│   ├── FSMLookupService.js              # FSM lookup, approval, person, org, user
+│   ├── FSMQueryService.js               # FSM T&M entry retrieval queries
+│   ├── FSMUdoService.js                 # USER SETTINGS: UdoMeta/UdoValue read + PATCH write
+│   ├── FSMJwtValidator.js               # FSM JWT signature verification against JWKS
+│   └── TokenCache.js                    # OAuth token caching
+│
+└── # ─────────── FRONTEND (SAP UI5) ───────────
+webapp/
+│
+├── index.html / simple.html             # App entry points
+├── manifest.json                        # UI5 app descriptor
+├── Component.js                         # UI5 Component + global fetch wrapper
+├── appconfig.json
+│
+├── view/
+│   ├── App.view.xml
+│   ├── TimeMaterialExt.view.xml         # Main view (T&M Journal page)
+│   └── fragments/
+│       ├── ContextInfoDialog.fragment.xml     # Session Context info dialog
+│       ├── ProductGroups.fragment.xml         # Activity panels, summary + T&M tables
+│       ├── ServiceCall.fragment.xml           # Service Order header panel
+│       ├── StatusLegendDialog.fragment.xml    # Approval-status legend dialog
+│       ├── TMCreateDialog.fragment.xml        # T&M Creation dialog
+│       ├── TMSortDialog.fragment.xml          # T&M Sort & Filter dialog
+│       ├── TypeConfigDialog.fragment.xml      # Type Configuration dialog (dormant)
+│       └── UserSettingsDialog.fragment.xml    # User Settings dialog
+│
+├── controller/
+│   ├── App.controller.js
+│   ├── TimeMaterialExt.controller.js     # COCKPIT: lifecycle, view model, activity prep, mixin wiring
+│   └── mixin/
+│       ├── DataLoadingMixin.js           # Data loading, org/person resolution, batch T&M loading
+│       ├── TechnicianMixin.js            # Technician/task selection
+│       ├── TMDialogMixin.js              # T&M dialog open/enrichment
+│       ├── TMEditMixin.js                # Individual entry edit handlers
+│       ├── TMExpenseMileageMixin.js      # Expense & Mileage creation
+│       ├── TMMaterialMixin.js            # Material entry creation
+│       ├── TMSaveMixin.js                # Batch save (create path)
+│       ├── TMTableMixin.js               # Table filter/sort + Edit/Save All + Delete Selected
+│       ├── TMTimeEntryMixin.js           # Time entry creation with repeat
+│       ├── TMTypeConfigurationMixin.js   # Type Configuration dialog (DORMANT - no caller)
+│       └── TMUserSettingMixin.js         # User Settings dialog
+│
+├── utils/
+│   ├── helpers/
+│   │   ├── DateTimeService.js            # Date/time utilities + DST-aware zone helpers
+│   │   ├── ProductGroupService.js        # Activity grouping by product
+│   │   ├── ReportedItemsData.js          # T&M data fetching
+│   │   └── URLHelper.js                  # Web container context handling
+│   │
+│   ├── services/
+│   │   ├── ActivityService.js
+│   │   ├── ApprovalService.js            # Approval status & remarks lookup
+│   │   ├── BusinessPartnerService.js
+│   │   ├── CacheService.js               # Startup cache warming
+│   │   ├── ContextService.js             # Web container & Shell context detection
+│   │   ├── ExpenseTypeService.js
+│   │   ├── ItemService.js
+│   │   ├── OrganizationService.js        # Org level + user/person resolution
+│   │   ├── PersonService.js
+│   │   ├── ServiceOrderService.js
+│   │   ├── TechnicianService.js
+│   │   ├── TimeTaskService.js
+│   │   ├── TimeZoneService.js            # Company time zone: single source of truth
+│   │   ├── TypeConfigService.js          # Expense/Mileage type config (ACTIVE)
+│   │   ├── UdfMetaService.js             # UDF Meta ID lookup (T&M entries)
+│   │   └── UserSettingsService.js        # USER SETTINGS: fetch, cache, save, entry-date rule
+│   │
+│   └── tm/
+│       ├── TMCreationService.js          # T&M entry templates
+│       ├── TMDataService.js              # T&M loading, summary totals + colour states
+│       ├── TMDialogService.js            # T&M dialog management, /defaultDate
+│       ├── TMEditService.js
+│       └── TMPayloadService.js           # T&M API payload building
+│
+├── model/
+│   ├── formatter.js
+│   └── models.js
+│
+├── css/
+│   └── style.css                         # Custom styles incl. summary colour rules
+│
+├── images/
+│   ├── favicon.png
+│   └── TUEVNORD_Logo.png
+│
+└── i18n/
+    ├── i18n.properties                   # English translations
+    └── i18n_de.properties                # German translations
+```
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `index.js` | ~150 | Express server: middleware, inbound auth (Auth Key + JWT), session store, `requireSession`, `/api/v1` route mounting |
-| `routes/activityRoutes.js` | ~155 | Activity & Service Call endpoints |
-| `routes/entryRoutes.js` | ~430 | T&M entry CRUD: batch create/update/delete, individual CRUD |
-| `routes/lookupRoutes.js` | ~275 | Person, org, lookup, approval, user endpoints |
-| `routes/configRoutes.js` | ~240 | Type configuration endpoints |
-| `utils/FSMService.js` | ~700 | FSM API core: HTTP methods, Data API, batch operations |
-| `utils/FSMLookupService.js` | ~475 | FSM lookups: approval, person, org, user, business partner |
-| `utils/FSMQueryService.js` | ~255 | FSM Query API: T&M entry retrieval queries |
-| `utils/FSMJwtValidator.js` | ~70 | FSM JWT signature verification against JWKS endpoint (Web UI auth). Algorithm allow-list (RS256), 24h key cache, rate limited. |
-| `utils/DestinationService.js` | ~90 | BTP Destination Service: reads VCAP_SERVICES, fetches destination config |
-| `utils/TokenCache.js` | ~110 | OAuth token caching with 5 min pre-expiry buffer |
-| `config/TypeConfigStore.js` | ~280 | Type configuration storage: file-based CRUD for expense/mileage type IDs |
+---
 
-#### Frontend (SAP UI5)
+## ⚙️ Type Configuration (dormant)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `Component.js` | ~95 | UI5 Component + global fetch wrapper that attaches `credentials: 'include'` and `Authorization: Bearer` (when `window.__fsmSessionToken` is set) on all `/api/v1/*` requests |
-| `View1.controller.js` | ~725 | Main controller: sync `onInit` + async `_initializeAsync` (auth → type config → parallel data loading), mixin coordination |
-| `ContextService.js` | ~545 | Context detection (Mobile / Shell SDK / URL params) + `/api/v1/shell-session-init` flow + Bearer token storage on `window.__fsmSessionToken` |
-| `DataLoadingMixin.js` | ~700 | Data loading: service call, activities, user org resolution |
-| `TMTableMixin.js` | ~1175 | Table filter/sort + Edit Selected/Save All + Delete Selected (PENDING/REVIEW) |
-| `TMDialogMixin.js` | ~405 | T&M dialog event handlers: add/remove entries, validation |
-| `TMDialogService.js` | ~485 | T&M dialog management: open/close dialogs, model binding |
-| `TMCreationService.js` | ~490 | T&M entry creation: templates, type-specific field initialization |
-| `TMPayloadService.js` | ~495 | FSM API payloads: request building, UDF field mapping |
-| `TypeConfigService.js` | ~320 | Frontend type config: API client, type checking (isExpenseType, etc.) |
+The Type Configuration dialog let an administrator maintain which Service Product IDs count
+as Expense and which as Mileage. **No control calls it any more** — the footer settings
+button opens User Settings instead.
 
-#### Lookup Services (Frontend)
+The code is not commented out and not deleted: it lives in
+`webapp/controller/mixin/TMTypeConfigurationMixin.js`, is mixed into the controller, and
+compiles like any other mixin. It simply has no caller.
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `PersonService.js` | ~280 | Person ID → Name resolution |
-| `TechnicianService.js` | ~240 | Technician suggestions for Input fields |
-| `TimeTaskService.js` | ~195 | Task ID → Name resolution |
-| `ItemService.js` | ~260 | Item ID/ExternalId → Name resolution |
-| `ExpenseTypeService.js` | ~170 | Expense Type ID → Name resolution |
-| `UdfMetaService.js` | ~180 | UDF Meta ID → ExternalId resolution |
-| `OrganizationService.js` | ~270 | Org Level ID → Name, user org resolution |
-| `BusinessPartnerService.js` | ~130 | BP ExternalId → Name resolution |
-| `ApprovalService.js` | ~210 | Object ID → Approval decision status + remarks |
+**To re-enable**, point a button at `.onOpenTypeConfig` in `TimeMaterialExt.view.xml`:
 
-#### UI Fragments (XML)
+```xml
+<Button text="{i18n>view1TypeConfig}" press=".onOpenTypeConfig" icon="sap-icon://action-settings"/>
+```
 
-| File | Size | Purpose |
-|------|------|---------|
-| `ContextInfoDialog.fragment.xml` | ~3KB | Session context info dialog (User, Account, Company, Organization) |
-| `ServiceCall.fragment.xml` | ~3KB | Service Order details panel |
-| `ProductGroups.fragment.xml` | ~38KB | Activity panels grouped by product, inline T&M tables |
-| `StatusLegendDialog.fragment.xml` | ~2KB | Approval-status legend dialog |
-| `TMCreateDialog.fragment.xml` | ~49KB | T&M creation dialog (Expense/Mileage/T&M tables) |
-| `TMSortDialog.fragment.xml` | ~1KB | Sort options dialog |
-| `TypeConfigDialog.fragment.xml` | ~6KB | Type configuration dialog (add/remove type IDs) |
+The fragment (`view/fragments/TypeConfigDialog.fragment.xml`) and all i18n keys are still in
+place; nothing else is needed.
+
+**To remove entirely**, drop the mixin from the controller's dependency list and from its
+`Object.assign` — nothing else references it.
 
 ---
 
@@ -1475,59 +1546,13 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 npm install
 
 # The Express server requires FSM_WEBCONTAINER_AUTH_KEY to start.
-# For local dev, export any 32+ character value (matching the FSM Admin
-# side isn't needed unless you're testing the Mobile flow locally).
 export FSM_WEBCONTAINER_AUTH_KEY='local-dev-key-not-used-against-real-fsm'
 
 npm start
 # App runs on http://localhost:3000
 ```
 
-**Note:** Local development requires BTP Destination Service binding for outbound FSM API calls. For rapid UI iteration without backend access, use SAP Business Application Studio with port forwarding on port 3003, or `npm run start:dev` (Fiori dev server, frontend only — backend API endpoints will not be available).
-
-### Testing Without FSM
-
-URL parameters can drive the initial context selection:
-```bash
-# Test with Activity
-http://localhost:3000?activityId=YOUR-ACTIVITY-UUID
-
-# Test with Service Call  
-http://localhost:3000?serviceCallId=YOUR-SERVICECALL-UUID
-```
-
-> **Important:** With strict authentication on `/api/v1/*`, this only loads the page and selects which object would be shown — **no FSM data populates** because no auth path was established (no Mobile Auth Key POST, no Web UI JWT). All `/api/v1/*` calls return 401.
-> 
-> Useful for: pure-frontend UI work (CSS, layout, view structure changes).
-> 
-> Not useful for: testing data flows, T&M creation/edit/delete, or anything that depends on FSM data. For full end-to-end testing, launch from FSM Mobile or FSM Web UI.
-
-### Context Sources
-
-The app supports 3 context sources (detected automatically by `ContextService.js`):
-
-| Source | Detection | Auth Mechanism | How to Test |
-|--------|-----------|----------------|-------------|
-| **FSM Mobile** | POST to `/web-container-access-point` | Authentication Key → `fsm_session` cookie | Deploy and open from FSM Mobile app |
-| **FSM Web UI** | Running in iframe + fsm-shell SDK available | Shell SDK JWT → `Authorization: Bearer` token | Configure as FSM Extension |
-| **URL Parameters** | `?activityId=` or `?serviceCallId=` in URL | None (page loads but `/api/v1/*` returns 401) | Direct browser access (UI-only testing) |
-
-### Web Container Context
-
-The app receives context from FSM Mobile via POST request to `/web-container-access-point`:
-```javascript
-{
-  "authenticationKey": "<shared-secret-matching-FSM_WEBCONTAINER_AUTH_KEY>",
-  "cloudId": "9D92E0B18FDC4A27A213401FEEA89FDA",
-  "objectType": "ACTIVITY",
-  "userName": "Max Mustermann",
-  "cloudAccount": "company_account",
-  "companyName": "Company Name",
-  "language": "de"
-}
-```
-
-The server validates `authenticationKey` via constant-time comparison. On success, an HttpOnly `fsm_session` cookie is issued for subsequent `/api/v1/*` calls.
+**Note:** Local development requires BTP Destination Service binding for outbound FSM API calls. For rapid UI iteration without backend access, use SAP Business Application Studio with port forwarding on port 3003, or `npm run start:dev` (Fiori dev server, frontend only).
 
 ### Adding a New Lookup Service
 
@@ -1537,7 +1562,7 @@ sap.ui.define([], () => {
     "use strict";
     return {
         _cache: new Map(),
-        
+
         async fetchData() {
             // Note the /api/v1/ prefix — all backend endpoints are versioned.
             // The global fetch wrapper in Component.js automatically attaches
@@ -1548,7 +1573,7 @@ sap.ui.define([], () => {
                 this._cache.set(item.id, item);
             });
         },
-        
+
         getNameById(id) {
             const item = this._cache.get(id);
             return item ? item.name : id;
@@ -1564,7 +1589,7 @@ async getYourData() {
 }
 ```
 
-3. **Add route handler** in `routes/lookupRoutes.js`. Paths inside route files are **bare** (no `/api/v1` prefix) — the `/api/v1` prefix is added by `app.use('/api/v1', ...)` in `index.js`:
+3. **Add route handler** in `routes/lookupRoutes.js`. Paths inside route files are **bare** (no `/api/v1` prefix) — the prefix is added by `app.use('/api/v1', ...)` in `index.js`:
 ```javascript
 // This becomes /api/v1/your-endpoint when mounted
 router.get("/your-endpoint", async (req, res) => {
@@ -1573,109 +1598,28 @@ router.get("/your-endpoint", async (req, res) => {
 });
 ```
 
-4. **Add to cache warming** in `webapp/utils/services/CacheService.js`:
-```javascript
-// Add to imports
-"com.tns.fsm.timematerialext.app/utils/services/YourService"
+4. **Add to cache warming** in `webapp/utils/services/CacheService.js`.
 
-// Add to _executeWarmup parallel loading
-YourService.fetchData()
-```
+### Adding a New User Setting
+
+**No code change is needed.** Add the UDF to the `TMExt_UserSettings` UDO in FSM Admin:
+
+| What you set in FSM | What the app does |
+|---------------------|-------------------|
+| `description` | becomes the label in the Setting column |
+| selection list values `{ "1": "…", "2": "…" }` | become the dropdown options |
+| `defaultValue` | becomes the preselected option |
+
+The new setting appears in the dialog on the next load, is saved with the rest on OK, and
+survives every future release. Only add an entry to `KNOWN_FIELD_CONFIG` in
+`utils/FSMUdoService.js` if the app must *act* on the setting (like `ENTRY_DATE` does).
 
 ### Modifying Type Configuration
 
-#### At Runtime (UI)
-1. Click **Type Config** button (⚙️) in the footer toolbar
-2. Add/remove Service Product IDs for Expense or Mileage types
-3. Changes take effect immediately
-
-#### At Development Time (Code)
-
-**Default values** in `config/TypeConfigStore.js` (Expense/Mileage disabled — original IDs preserved in a code comment there):
-```javascript
-const DEFAULT_CONFIG = {
-    expenseTypes: [],   // was ["Z40000001", "Z40000007", "Z50000000"]
-    mileageTypes: [],   // was ["Z40000038", "Z40000008"]
-    lastModified: null,
-    modifiedBy: null
-};
-```
-
-**Frontend fallback** in `webapp/utils/services/TypeConfigService.js` (used only on API failure — must match):
-```javascript
-const DEFAULT_EXPENSE_TYPES = [];   // was ["Z40000001", "Z40000007", "Z50000000"]
-const DEFAULT_MILEAGE_TYPES = [];   // was ["Z40000038", "Z40000008"]
-```
-
-**Initial config file** `config/typeconfig.json`:
-```json
-{
-  "expenseTypes": [],
-  "mileageTypes": [],
-  "lastModified": null,
-  "modifiedBy": null
-}
-```
-
-#### Type Configuration API
-```javascript
-// Get current config
-GET /api/v1/get-type-config
-// Response: { success: true, data: { expenseTypes: [...], mileageTypes: [...] } }
-
-// Add expense type
-POST /api/v1/add-expense-type
-Body: { "typeId": "Z40000099", "modifiedBy": "username" }
-
-// Add mileage type
-POST /api/v1/add-mileage-type
-Body: { "typeId": "Z40000099", "modifiedBy": "username" }
-
-// Remove types
-POST /api/v1/remove-expense-type
-POST /api/v1/remove-mileage-type
-Body: { "typeId": "Z40000099", "modifiedBy": "username" }
-
-// Reset to defaults
-POST /api/v1/reset-type-config
-Body: { "modifiedBy": "username" }
-```
-
-All these endpoints require an authenticated session (cookie or Bearer header) — see [docs/SECURITY.md](docs/SECURITY.md).
-
-### Adding a New T&M Entry Type
-
-To add a new entry type (e.g., "Travel"):
-
-1. **Update `config/TypeConfigStore.js`** — Add new type array:
-```javascript
-const DEFAULT_CONFIG = {
-    expenseTypes: [...],
-    mileageTypes: [...],
-    travelTypes: ["Z40000099"],  // New type
-};
-```
-
-2. **Update `webapp/utils/services/TypeConfigService.js`** — Add type checking:
-```javascript
-isTravelType(serviceProductId) {
-    return _config?.travelTypes?.includes(serviceProductId) || false;
-}
-```
-
-3. **Update `webapp/utils/tm/TMDialogService.js`** — Add type flag to dialog model:
-```javascript
-const isTravelType = TypeConfigService.isTravelType(serviceProductExtId);
-```
-
-4. **Update `webapp/view/fragments/TMCreateDialog.fragment.xml`** — Add form section:
-```xml
-<Panel visible="{createTM>/isTravelType}" headerText="Travel Entry">
-    <!-- Travel-specific fields -->
-</Panel>
-```
-
-5. **Update `webapp/view/fragments/TypeConfigDialog.fragment.xml`** — Add UI section for configuring travel type IDs
+The dialog is dormant, but the configuration is still live. Defaults are in
+`config/TypeConfigStore.js` (backend) and `webapp/utils/services/TypeConfigService.js`
+(frontend fallback); the runtime store is `config/typeconfig.json` and the
+`/api/v1/*-type-config` endpoints.
 
 ---
 
@@ -1690,145 +1634,61 @@ cf logs com.tns.fsm.timematerialext.app --recent
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| Server crashes immediately on startup with `FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set` | Required env var missing | `cf set-env com.tns.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<value>'` then `cf restage com.tns.fsm.timematerialext.app`. Locally: `export FSM_WEBCONTAINER_AUTH_KEY='...'` before `npm start`. |
-| Mobile launch returns 401 (`WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`) | FSM Admin Authentication Key doesn't match the `FSM_WEBCONTAINER_AUTH_KEY` env var | Both values must match byte-exactly. Compare FSM Admin → Web Containers → Authentication Key against the env var (`cf env com.tns.fsm.timematerialext.app`). |
-| Web UI extension launches but all data is missing / 401s in console | Shell session init failed or JWKS validation failed | Check `cf logs` for `SHELL-INIT: rejected — JWT validation failed: ...`. If JWKS unreachable, verify `FSM_JWKS_URL` (default points at DE region; override for other regions). |
-| Standalone URL access (`?activityId=...`) loads page but no data populates | Strict auth — no Mobile Auth Key POST and no Web UI JWT means no session token | Standalone is now page-load-only for pure UI work. Use FSM Mobile or FSM Web UI for full functionality. |
-| 404 on app load | Static file path wrong | Verify `express.static` points to correct folder |
-| Session Context Dialog shows nothing | Context not detected | Ensure opened from FSM Mobile/Web UI |
-| Organization not resolved | User not assigned to org level in FSM | Verify user's Person record has orgLevelIds assigned |
-| No activities shown | No EXECUTION/CLOSED activities or wrong org level | Check activity execution stages and org level assignments in FSM |
-| T&M shows IDs instead of names | Lookup service not loaded (often caused by 401s during cache warm) | Check console for `CacheService: Cache warm complete` line — if it shows `{technicians: false, ...}`, auth wasn't established before cache warm fired. Check `_initializeAsync` sequencing in `View1.controller.js`. |
-| Dialog shows "No data" | API timeout | Refresh and try again |
-| "Context not available" message | Context lost or not provided | Re-open app from FSM Mobile/Web UI |
+| Server crashes immediately on startup with `FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set` | Required env var missing | `cf set-env com.tns.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<value>'` then `cf restage`. Locally: `export FSM_WEBCONTAINER_AUTH_KEY='...'` before `npm start`. |
+| Mobile launch returns 401 (`WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`) | FSM Admin Authentication Key doesn't match the env var | Both values must match byte-exactly. |
+| Web UI extension launches but all data is missing / 401s | Shell session init or JWKS validation failed | Check `cf logs` for `SHELL-INIT: rejected`. Verify `FSM_JWKS_URL` for non-DE regions. |
+| No activities shown | No EXECUTION/CLOSED/CANCELLED activities, or the user's org level doesn't match any | Check activity execution stages and org level assignments in FSM. The app no longer filters by responsible/supporting technician. |
+| "No Organization Level Assigned" | User's Person record has no `orgLevelIds` | Assign an org level to the Person in FSM. |
+| **PersonID blank in User Settings** | The user resolved but their Person has no External ID, or `KNOWN_FIELD_CONFIG` does not match the UDF | Check the Person's External ID field in FSM. If it is filled, compare the UDF's `externalId` against the `z_TM_PersonID` key in `utils/FSMUdoService.js` — a mismatch is logged as a warning. |
+| **DateType has no preselection** | The UDF has no `defaultValue` in FSM and no `defaultCode` in `KNOWN_FIELD_CONFIG` | Set `defaultValue` on the UDF in FSM Admin (recommended), or add `defaultCode` to the config entry. |
+| **New entries dated to the planned start although "Current date" is set** | Settings could not be read, so the app fell back | Open User Settings — if it shows an error strip, the read failed. The fallback is deliberate. |
+| **User Settings shows "no user settings created"** | The person has no record yet | Press OK to create one. Records belonging to other people are never shown. |
+| T&M shows IDs instead of names | Lookup service not loaded (often caused by 401s during cache warm) | Check console for `CacheService: Cache warm complete` — if it shows `{technicians: false, ...}`, auth wasn't established before cache warm fired. |
+| Summary metric is grey although entries exist | Every entry of that type is REJECTED, so it is excluded | Expected — REJECTED entries never count toward the summary. |
 | Add Entry button not visible | Activity is cancelled/closed or read-only | Button hidden when `isReadOnly` is true |
-| Activity not highlighted | cloudId doesn't match any activity | Verify context passes correct Activity ID |
-| Type Config changes not persisting | File storage on Cloud Foundry is ephemeral | Changes persist during runtime but reset on app restart/redeploy |
-| Wrong creation form showing | Service Product ID not in correct type list | Use Type Config dialog to add/remove IDs |
-| Delete Selected toast says "0 entries deleted" but entries are gone | Multipart batch response parser drops bodyless 204 responses | Cosmetic — entries are actually deleted. Refresh the page to confirm. |
-| Refresh button click crashes with `Cannot read properties of undefined (reading 'setProperty')` | View model not yet initialized | Should not happen with current code (sync `onInit` ensures model exists before view renders). If it appears, verify `View1.controller.js` `onInit` is **not** declared `async`. |
-| `[FUTURE FATAL] com.tns.fsm.timematerialext.app.controller.View1: The registered Event Listener 'onInit' must not have a return value` | `onInit` declared as `async` (returns Promise) | Make `onInit` synchronous; delegate async work to a separate `_initializeAsync` method called fire-and-forget. |
-| `fetch-wrapper: session readiness gate timed out after 10s` | Some `/api/v1/*` call fired before session was established | Defensive backstop in `Component.js`. Should not appear in normal operation — investigate which service is fetching outside the controlled bootstrap sequence in `_initializeAsync`. |
-| Web UI extension works first time, then 401s after some idle | Session token expired (30 min TTL) or container restarted (in-memory `sessionStore` cleared) | Refresh the iframe; the Shell SDK will re-issue a JWT and the app will re-establish a session. |
-| `class` assertion error in console | UI5 debug mode warning | Can be ignored — cosmetic only, doesn't affect functionality |
+| Delete Selected toast says "0 entries deleted" but entries are gone | Multipart batch response parser drops bodyless 204 responses | Cosmetic — entries are actually deleted. Refresh to confirm. |
+| `[FUTURE FATAL] ... templateShareable` | An aggregation binding lacks `templateShareable` | Every binding inside another binding's template must declare `templateShareable: false`. |
+| `[FUTURE FATAL] ... 'onInit' must not have a return value` | `onInit` declared as `async` | Make `onInit` synchronous; delegate async work to `_initializeAsync`. |
+| Web UI works first time, then 401s after idle | Session token expired (30 min TTL) or container restarted | Refresh the iframe; the Shell SDK re-issues a JWT. |
 
 ### Batch Size & Pagination Handling
 
-Large T&M operations (bulk create, edit, delete, and read-back) are chunked and paginated so they stay within transport-layer body-size limits and FSM Query API page limits. This prevents both `413 (Content Too Large)` failures on save and silent row truncation on read.
+Large T&M operations (bulk create, edit, delete, and read-back) are chunked and paginated so they stay within transport-layer body-size limits and FSM Query API page limits.
 
 | Concern | Behavior | Location |
 |---------|----------|----------|
-| **Batch create** | Entries are split into chunks of **50** and sent sequentially. A failed chunk does **not** abort the rest — all chunks are attempted, and failures are reported at the end with per-entry detail (mapped via `contentId`, not array position). | `TMSaveMixin.js` → `_submitCreateTMEntries()` |
-| **Batch update** | Same chunking (50) and continue-on-failure behavior. Edit-mode is cleared only on rows that actually saved, mapped via `contentId` — safe even when FSM returns results out of order. | `TMTableMixin.js` → `onSaveAllTM()` |
-| **Batch delete** | Chunked at **100** (delete payloads are ID-only, so more fit per request). CA-27 (concurrent modification) retry with refreshed `lastChanged` is applied per chunk, keyed on entry `id`. | `TMTableMixin.js` → `_executeDeleteSelectedTM()` |
-| **Read-back (all reads)** | `makeQueryRequest` requests `pageSize=1000` (FSM max) and pages through all results, concatenating each page's `data[]`. Without this, FSM's default page size of 100 silently truncated any activity with 100+ reported items — producing incorrect tables, counts, and AZ/FZ/WZ totals with no error. | `FSMService.js` → `makeQueryRequest()` |
-| **Multi-activity load** | Activities are loaded in chunks of 10 via `Promise.allSettled` with throttling; each activity read benefits from the pagination fix above. | `DataLoadingMixin.js` → `_batchLoadWithEnrichment()` |
+| **Batch create** | Entries split into chunks of **50**, sent sequentially. A failed chunk does not abort the rest; failures reported with per-entry detail (mapped via `contentId`). | `TMSaveMixin.js` → `_submitCreateTMEntries()` |
+| **Batch update** | Same chunking (50) and continue-on-failure. Edit-mode cleared only on rows that saved. | `TMTableMixin.js` → `onSaveAllTM()` |
+| **Batch delete** | Chunked at **100**. CA-27 retry with refreshed `lastChanged` per chunk. | `TMTableMixin.js` → `_executeDeleteSelectedTM()` |
+| **Read-back (all reads)** | `makeQueryRequest` requests `pageSize=1000` and pages through all results. Without this, FSM's default page size of 100 silently truncated any activity with 100+ items. | `FSMService.js` → `makeQueryRequest()` |
+| **Multi-activity load** | Activities loaded in chunks of 10 via `Promise.allSettled` with throttling. | `DataLoadingMixin.js` → `_batchLoadWithEnrichment()` |
+| **UDF meta resolution** | Every UUID resolved in ONE `IN()` query (chunked at 200), never one request per UUID. | `FSMUdoService.js` → `getUdfMetaByIds()` |
 
-**Non-JSON error handling:** All batch calls check response status and `content-type` before parsing. If a proxy or the body-parser returns an HTML error page (e.g. a 413), the app surfaces a clean message (`msgBatchTooLarge`) instead of crashing with `Unexpected token '<', "<!DOCTYPE"... is not valid JSON`.
-
-**If chunks still 413:** the limit is upstream (approuter / CF router / corporate proxy), not the Node body-parser. Lower `CHUNK_SIZE` in the relevant mixin. The backend `express.json({ limit })` in `index.js` is a modest backstop (`1mb`) and does not need to be raised once chunking is in place.
-
-### Debug Console Logs
-
-The app logs detailed information to browser console:
-
-**Context Detection (`ContextService`):**
-- `ContextService: URL parameters detected` — URL params found, highest priority
-- `ContextService: Running in iframe, trying Shell SDK first...` — Iframe detected
-- `ContextService: FSM Shell SDK loaded` — Shell SDK script loaded
-- `ContextService: Raw shell context received:` — REQUIRE_CONTEXT response
-- `ContextService: ViewState 'activity' received:` — Activity from shell
-- `ContextService: FSM Shell context detected` — Shell context resolved
-- `ContextService: Session token stored for Bearer auth (Web UI flow)` — JWT verified, session established
-- `ContextService: Shell session initialized — cookie set` — Shell session init returned 200
-- `ContextService: Mobile web container context detected` — Mobile POST context
-- `ContextService: No context found - standalone mode` — No context, empty state
-- `ContextService: Returning cached context from [source]` — Using cached context
-
-**Type Configuration (`TypeConfigService`):**
-- `TypeConfigService: Loaded config from server` — Config fetched successfully
-
-**Data Loading (`CacheService`, `DataLoadingMixin`):**
-- `CacheService: Starting parallel cache warm...` — Lookup data loading start
-- `CacheService: Cache warm complete in Xms {technicians: true, ...}` — All caches loaded successfully (all `true` = healthy bootstrap)
-- `CacheService: Cache warm complete in Xms {technicians: false, ...}` — Cache warm fired before auth was established (sequencing bug); check `_initializeAsync` order
-
-**Services:**
-- `ActivityService:` — Activity data operations
-- `OrganizationService:` — Organization level lookups
-- `TMDialogService:` — T&M dialog operations
-- `TMCreationService:` — T&M entry creation
-
-**Technician Selection:**
-- `TechnicianSearch:` / `TechnicianLiveChange:` — Search input
-- `TechnicianSelect:` / `TechnicianSuggestionSelect:` — Selection events
+**Non-JSON error handling:** All batch calls check response status and `content-type` before parsing, so a proxy HTML error page surfaces a clean message instead of a JSON parse crash.
 
 ### Backend Logs
-
-Server-side logs (visible via `cf logs`):
 
 **Startup:**
 ```
 Server running on port 3000
 FSM_WEBCONTAINER_AUTH_KEY is set (N chars)
 Session TTL: 30 minutes
-Cookie: HttpOnly; Secure; SameSite=None; Path=/
 API mounted at /api/v1 (strict auth — no Web UI carve-out)
-FSMJwtValidator: using JWKS endpoint https://de.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json
-```
-
-**Normal operation:**
-```
-WC-ACCESS-POINT: context stored, session issued (contextKey=..., sessionStoreSize=N)
-SHELL-INIT: session issued (contextKey=..., userEmail=..., sessionStoreSize=N)
-Batch create: 5 entries (transactional: false)
-Batch update: 3 entries (transactional: false)
-Batch delete: 2 entries (transactional: false)
+FSMJwtValidator: using JWKS endpoint https://de.fsm.cloud.sap/...
 ```
 
 **Auth-related rejections:**
-- `WC-ACCESS-POINT: rejected POST — authenticationKey mismatch` — FSM Admin Auth Key doesn't match env var
-- `WC-ACCESS-POINT: rejected POST — authenticationKey missing` — Mobile POST didn't include `authenticationKey` field
-- `SHELL-INIT: rejected — JWT validation failed: ...` — Web UI JWT couldn't be verified (signature, expiration, or unknown key)
-- `SHELL-INIT: rejected — missing authToken in body` — Frontend bug or tampering
-- `AUTH: rejected ... missing-credential ... source=none` — `/api/v1/*` called without cookie or Bearer header — direct attack attempt or bootstrap sequencing bug
-- `AUTH: rejected ... invalid-or-expired ... source=cookie` — Mobile cookie expired or tampered
-- `AUTH: rejected ... invalid-or-expired ... source=bearer` — Web UI Bearer token expired or tampered
+- `WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`
+- `SHELL-INIT: rejected — JWT validation failed: ...`
+- `AUTH: rejected ... missing-credential ... source=none`
 
 **Error patterns to watch for:**
-- `Error fetching activity by ID:` — Activity fetch failed
-- `Error fetching activities by service call:` — Composite tree failed
+- `FSMService: Person lookup empty for user '...', falling back to UnifiedPerson` — normal on accounts where `Person.userName` holds the login name
+- `FSMService: Error fetching UDO values:` / `Error fetching UDO meta:` — User Settings read failed
+- `FSMService: Error saving user setting:` — User Settings write failed
+- `FSMService: user-settings field '...' from KNOWN_FIELD_CONFIG matched nothing` — a UDF was renamed in FSM; its default/auto-fill is not applied
 - `Error fetching reported items:` — T&M data fetch failed
-- `Error fetching user org level:` — User/org resolution failed
-- `Error in batch create:` — Batch entry creation failed
-- `Error in batch update:` — Batch entry update failed
-- `Error in batch delete:` — Batch entry deletion failed
-- `Error creating expense/mileage/material/time effort:` — Individual entry creation failed
-- `Error updating expense/mileage/material/time effort:` — Individual entry update failed
-- `Error fetching persons:` — Person lookup failed
-- `TypeConfigStore: Error saving config:` — Type config save failed
-
-### Type Configuration Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Can't add type ID | Ensure ID is not empty; IDs are auto-uppercased and trimmed |
-| Type ID already exists | Duplicate check prevents adding same ID twice to same list |
-| Adding ID to Expense removes it from Mileage (or vice versa) | Expected behavior — IDs auto-move between lists to prevent conflicts |
-| Reset doesn't restore all defaults | Refresh page after reset to reload from server |
-| Changes lost after redeploy | Expected behavior — file storage is ephemeral on Cloud Foundry |
-
-### Authentication Troubleshooting
-
-| Issue | Diagnostic | Solution |
-|-------|-----------|----------|
-| Don't know if Mobile cookie is set | `document.cookie` in DevTools console | Should contain `fsm_session=...`. If absent in iframe (Web UI), this is expected — Web UI uses Bearer header, not cookie. |
-| Don't know if Web UI Bearer token is set | `window.__fsmSessionToken` in DevTools console | Should be a 32+ char base64url string after Shell session init. If `undefined` or `null`, the init flow didn't complete — check console for ContextService errors. |
-| Don't know which auth source is being used | `cf logs com.tns.fsm.timematerialext.app \| grep "AUTH:"` | Successful requests don't log; rejections include `source=cookie` or `source=bearer` so you can see which path the request came in on. |
-| Want to verify JWKS endpoint is reachable from CF | `curl https://de.fsm.cloud.sap/api/oauth2/v2/.well-known/jwks.json` | Should return JSON with `"keys": [...]` array, HTTP 200. If unreachable, JWT validation will fail and Web UI auth breaks. |
-| Want to inspect what FSM Mobile is sending | `cf logs com.tns.fsm.timematerialext.app \| grep "WC-ACCESS-POINT"` | Successful POSTs log `context stored, session issued` with the contextKey. Missing log = POST never arrived. Rejection log = key mismatch. |
-
-For the full inbound auth model (threat model, rotation procedures, why not XSUAA), see [docs/SECURITY.md](docs/SECURITY.md).
+- `Error in batch create/update/delete:` — batch operation failed
 
 ---
 
@@ -1837,14 +1697,12 @@ For the full inbound auth model (threat model, rotation procedures, why not XSUA
 |                                    |                                                          |
 |------------------------------------|----------------------------------------------------------|
 | **App Name**                       | T&M Journal                                              |
-| **Module Name**                    | com.tns.fsm.timematerialext.app                                              |
+| **Module Name**                    | com.tns.fsm.timematerialext.app                          |
 | **Framework**                      | SAP UI5 (Fiori) + Node.js Express                        |
 | **UI5 Theme**                      | sap_horizon                                              |
-| **UI5 Version**                    | Latest (OpenUI5 from CDN)                                |
 | **Deployment Platform**            | SAP Business Technology Platform (Cloud Foundry)         |
 | **Node.js Version**                | 18+                                                      |
-| **npm Version**                    | 8+                                                       |
-| **Inbound Authentication**         | FSM Authentication Key (Mobile) + FSM JWT validation against JWKS (Web UI), with HttpOnly cookie or Bearer token session delivery |
+| **Inbound Authentication**         | FSM Authentication Key (Mobile) + FSM JWT validation against JWKS (Web UI) |
 | **Outbound Authentication**        | OAuth 2.0 via BTP Destination Service                    |
 | **Supported Contexts**             | FSM Mobile (full), FSM Web UI (full), Standalone (page-load-only, no auth) |
 
@@ -1855,117 +1713,77 @@ For the full inbound auth model (threat model, rotation procedures, why not XSUA
 ### ✅ Implemented:
 
 **Context & Integration:**
-- Multi-context support (FSM Mobile, FSM Web UI, Standalone via URL params — standalone now page-load-only after strict auth)
-- Web container integration (receives context + Authentication Key from FSM Mobile)
-- FSM Shell SDK integration (receives context + access_token JWT from FSM Web UI via iframe)
-- URL parameter support (`?activityId=` or `?serviceCallId=`) for object selection
-- Session Context Dialog (User, Language, Account, Company, Organization), opened from footer toolbar
+- Multi-context support (FSM Mobile, FSM Web UI, Standalone via URL params)
+- Web container integration (context + Authentication Key from FSM Mobile)
+- FSM Shell SDK integration (context + access_token JWT from FSM Web UI)
+- Session Context Dialog (User, Language, Account, Company, Organization)
 
 **Inbound Authentication:**
-- FSM Authentication Key validation on Mobile WebContainer entry POSTs (constant-time comparison)
-- FSM JWT signature verification on Web UI Shell flow (RS256, against FSM JWKS endpoint)
+- FSM Authentication Key validation (constant-time comparison)
+- FSM JWT signature verification (RS256, against FSM JWKS)
 - Server-issued opaque session tokens (32 bytes random, 30 min TTL)
-- Two delivery mechanisms: HttpOnly cookie (Mobile, first-party WebView) and `Authorization: Bearer` header (Web UI, where browsers refuse to store third-party cookies)
-- `requireSession` middleware on all `/api/v1/*` routes (no carve-out)
-- API versioning at `/api/v1` per Programmierrichtlinie §7
+- Cookie (Mobile) and `Authorization: Bearer` (Web UI) delivery
+- `requireSession` middleware on all `/api/v1/*` routes
 - Full documentation in [docs/SECURITY.md](docs/SECURITY.md)
 
-**Organization & Navigation:**
-- Organization level auto-resolution from logged-in user (userName → User API → Person → orgLevel)
-- Service Order panel (expandable, collapsed by default)
-- Activities grouped by Product Description
-- Context activity highlighting (light blue SAP Fiori styling, auto-expanded)
+**Organization, Person & Visibility:**
+- Organization level auto-resolution from logged-in user
+- Person identity resolution (id, externalId, firstName, lastName) via Person with UnifiedPerson fallback
+- **Activity visibility by organization level only** — assignment filtering removed, access governed by FSM Policy Groups
+- Service Order panel, activities grouped by Product Description
+- Context activity highlighting
 
-**Activity Display:**
-- Activity panels with key fields (Address, Responsible, Org Level, Service Product)
-- T&M Summary for T&M activities: Material qty (reported/planned), AZ/FZ/WZ hours reported
+**User Settings (FSM UDO `TMExt_UserSettings`):**
+- Read: definition + the user's own record, in a fixed 3 queries
+- Write: create or update via `PATCH`, decided by looking the person up first
+- Records of other users filtered out server-side
+- Field labels, dropdown options and defaults driven entirely by FSM metadata
+- **DateType** controls the default date of every new T&M entry
+- Preselection of the user's saved choice, with the field default as fallback
+
+**Activity T&M Summary:**
+- Material qty and AZ/FZ/WZ hours per activity
+- REJECTED entries excluded from totals
+- Per-metric colour: red (CHANGE), orange (PENDING/REVIEW), grey (none/all REJECTED), green (approved)
+- Colour decided in one function; the view only binds the result
 
 **Inline T&M Tables (per activity):**
-- Time/Material combined table with type filter (All / Time Effort / Material)
-- Expense table with type, amounts, technician
-- Mileage table with distance, duration, technician
-- Row highlighting by approval status (Success/Error/Warning)
-- Approval status column (PENDING, APPROVED, DECLINED, CANCELLED, DECLINED_CLOSED → CHANGE, REVIEW, REJECTED)
-- Decision column (approver's remarks)
-- Batch selection via checkbox (PENDING and REVIEW entries selectable for delete)
-- Inline edit mode (Edit Selected → modify values → Save All)
-- Batch delete (Delete Selected) — works for PENDING or REVIEW status
-- Sort dialog per table type
-- Horizontal scroll for wide tables on mobile
+- Time/Material combined table with type filter
+- Row highlighting and status badge (CHANGE / REJECTED renames applied)
+- Batch selection for PENDING and CHANGE entries
+- Inline edit mode, batch update, batch delete
+- Sort & filter dialog per table type
 
 **T&M Creation Dialog:**
-- Entry type based on Activity Service Product (configurable via Type Config)
-- Three creation forms:
-  - **Expense** — Multi-row table: Expense Type, Technician, External/Internal Amount, Date, Remarks
-  - **Mileage** — Multi-row table: Mileage Type, Technician, Distance (km), Duration (min), Date, Remarks
-  - **Time & Material** — Material table (Item, Technician, Quantity, Date, Remarks) + Time entry tables (AZ/FZ/WZ with Task, Multi-Technician tokens, Duration, Date, Repeat Date Range, Remarks)
-- Multi-technician selection (MultiInput with token-based picker)
-- Repeat date range (checkbox + end date → creates entries for each day)
-- Technician search with Input suggestions (4000+ records)
-- Task dropdown filtered by category (AZ, FZ, WZ)
-- Sequential time calculation (entries chain start/end times per date)
-- Batch save with confirmation preview (shows entry count, technician × dates multipliers)
+- Entry type based on Activity Service Product
+- New rows pre-dated per the user's DateType setting
+- Multi-technician selection, repeat date range, sequential time calculation
+- Batch save with confirmation preview
 
-**T&M Entry Edit:**
-- Individual entry editing via inline edit mode
-- Batch update (Save All edited entries)
-- Entry-type-specific field editing (Time Effort, Material, Expense, Mileage)
-
-**T&M Entry Submission:**
-- Full FSM API integration: batch create, batch update, batch delete
-- Individual create/update endpoints for each entry type
-- Dialog closes and inline tables auto-refresh after creation
-
-**Bootstrap Sequencing:**
-- Synchronous `onInit` (UI5 lifecycle compliance, view model exists before render)
-- Async `_initializeAsync` chain: auth context → type config → parallel data loading
-- Eliminates race conditions between auth establishment and `/api/v1/*` calls
-- Documented in `View1.controller.js` and `docs/SECURITY.md`
-
-**Type Configuration:**
-- Configurable Expense/Mileage Service Product IDs
-- Type Config Dialog (add/remove/reset type IDs)
-- REST API for type configuration CRUD (under `/api/v1/*`)
-- File-based storage (`config/typeconfig.json`)
-- Auto-uppercase and trim on type IDs
-- Auto-move between lists (adding to Expense removes from Mileage and vice versa)
-- Default types:
-  - Expense: Z40000001, Z40000007, Z50000000
-  - Mileage: Z40000038, Z40000008
-  - Time & Material: All others
-
-**Internationalization:**
-- English translations (`i18n.properties`, ~980 lines)
-- German translations (`i18n_de.properties`, ~980 lines)
-
-**Services & Infrastructure:**
-- Lookup services for ID resolution (Person, Technician, Task, Item, ExpenseType, UdfMeta, Approval, Organization, BusinessPartner)
-- Parallel cache warming at startup (CacheService) — runs after auth is established to avoid 401s
-- Outbound OAuth 2.0 to FSM via BTP Destination Service (`FSM_S4E`)
-- OAuth token caching with 5 min pre-expiry buffer (TokenCache.js)
-- Inbound JWT key caching with 24h TTL (FSMJwtValidator.js)
-- Responsive CSS with mobile-first design (CSS Grid auto-fit layout)
+**Controller structure:**
+- Controller acts as a cockpit: lifecycle, view model, activity preparation, mixin wiring
+- Eleven mixins, including `TMUserSettingMixin` and the dormant `TMTypeConfigurationMixin`
 
 ### 📋 Planned:
+- Free-text editing for non-selection user settings (currently read-only in the dialog)
 - Persistent type configuration (database storage instead of file)
 - Persistent session storage (Redis or similar) for horizontal scaling — currently in-memory, requires `instances: 1`
 - Multi-region JWKS configuration (currently defaults to DE; override via `FSM_JWKS_URL`)
 - Offline support
-- Restoration of standalone mode for development via opt-in `DEV_BYPASS_AUTH` env var (clearly named, never set in production)
 
 ---
 
 ## 🔐 Security Notes
 
-- **Inbound authentication on all API paths.** All `/api/v1/*` routes require a valid session token via cookie (Mobile) or Bearer header (Web UI). Direct browser access without an established session returns 401. See [docs/SECURITY.md](docs/SECURITY.md) for the full model.
-- **FSM Authentication Key** (Mobile flow) stored as env var (`FSM_WEBCONTAINER_AUTH_KEY`), validated server-side via constant-time comparison. Server refuses to start without it.
-- **FSM JWT validation** (Web UI flow) uses RS256 algorithm allow-list, prevents `alg: none` and HS256-confusion attacks. Public keys cached for 24h, fetch rate-limited to 10/min.
-- Session tokens generated via `crypto.randomBytes(32)`, stored in-memory only, 30-minute TTL.
+- **Inbound authentication on all API paths.** All `/api/v1/*` routes require a valid session token via cookie (Mobile) or Bearer header (Web UI). See [docs/SECURITY.md](docs/SECURITY.md).
+- **FSM Authentication Key** (Mobile flow) stored as env var, validated via constant-time comparison. Server refuses to start without it.
+- **FSM JWT validation** (Web UI flow) uses an RS256 algorithm allow-list, preventing `alg: none` and HS256-confusion attacks. Public keys cached 24h, fetch rate-limited.
+- **User settings are per-person and server-filtered.** A request for settings returns only the requesting person's own record; other technicians' settings never reach the browser.
+- **FSQL literals are validated, not escaped.** UDO and UDF identifiers are checked against a strict character allow-list before being placed in a query; anything failing it is dropped.
+- Session tokens generated via `crypto.randomBytes(32)`, in-memory only, 30-minute TTL.
 - **Outbound OAuth tokens** cached in memory (not persisted to disk).
 - **Destination credentials** stored securely in VCAP_SERVICES (BTP-managed).
-- **Cookies** set with `HttpOnly; Secure; SameSite=None`. Cookie attribute applies to Mobile flow; Web UI uses Bearer token because browsers refuse to store cookies in cross-site iframe context.
-- **Web container context** stored in memory (cleared on restart).
-- **Type configuration** stored in file (no sensitive data).
+- **Cookies** set with `HttpOnly; Secure; SameSite=None` (Mobile flow); Web UI uses a Bearer token because browsers refuse cookies in a cross-site iframe.
 - HTTPS enforced by Cloud Foundry.
 - No sensitive data logged (auth tokens, session tokens, and JWTs excluded from console output).
 - fsm-shell SDK loaded from trusted CDN (`https://unpkg.com/fsm-shell@1.20.0`).
@@ -1979,4 +1797,4 @@ Internal use only — Company proprietary.
 
 ---
 
-**Last Updated:** April 2026
+**Last Updated:** September 2026

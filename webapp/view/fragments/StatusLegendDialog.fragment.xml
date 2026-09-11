@@ -8,6 +8,11 @@
         1. Entry Statuses - what each status means for the technician
         2. Supervisor Actions - what changes the status
         Opened via the info button in the T&M Reports section header.
+
+        The labels here must match the badges rendered in the T&M tables
+        (ProductGroups.fragment.xml):
+          FSM DECLINED        -> CHANGE
+          FSM DECLINED_CLOSED -> REJECTED
     -->
     <Dialog
         id="statusLegendDialog"
@@ -19,7 +24,7 @@
     >
         <content>
             <VBox class="sapUiSmallMargin">
-            
+
                 <!-- Section 1: Entry Statuses -->
                 <Label text="{i18n>statusLegendStatusHeader}" design="Bold" class="sapUiSmallMarginBottom"/>
                 <Table>
@@ -54,7 +59,7 @@
                         </ColumnListItem>
                         <ColumnListItem>
                             <cells>
-                                <ObjectStatus text="DECLINED" state="Error"/>
+                                <ObjectStatus text="REJECTED" state="Error"/>
                                 <Text text="{i18n>statusLegendDeclinedDesc}" wrapping="true"/>
                             </cells>
                         </ColumnListItem>
@@ -66,7 +71,7 @@
                         </ColumnListItem>
                     </items>
                 </Table>
-                
+
                 <!-- Section 2: Supervisor Actions -->
                 <Label text="{i18n>statusLegendActionsHeader}" design="Bold" class="sapUiMediumMarginTop sapUiSmallMarginBottom"/>
                 <Table>
@@ -101,7 +106,7 @@
                         </ColumnListItem>
                     </items>
                 </Table>
-                
+
             </VBox>
         </content>
         <beginButton>

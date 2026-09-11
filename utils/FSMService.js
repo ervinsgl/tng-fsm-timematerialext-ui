@@ -752,6 +752,7 @@ class FSMService {
 // Mix in methods from sub-modules
 const FSMQueryService = require('./FSMQueryService');
 const FSMLookupService = require('./FSMLookupService');
-Object.assign(FSMService.prototype, FSMQueryService, FSMLookupService);
+const FSMUdoService = require('./FSMUdoService');
+Object.assign(FSMService.prototype, FSMQueryService, FSMLookupService, FSMUdoService);
 
 module.exports = new FSMService();

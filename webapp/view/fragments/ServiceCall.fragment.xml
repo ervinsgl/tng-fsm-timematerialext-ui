@@ -22,7 +22,9 @@
                 <core:Icon src="sap-icon://sales-order" class="sapUiSmallMarginEnd"/>
                 <Title text="{i18n>serviceOrderTitle}" level="H4" titleStyle="H4"/>
                 <ToolbarSpacer/>
-                <Title text="{i18n>serviceOrderId} {view>/serviceCall/externalId}" level="H5"/>
+                <!-- Bare ID, no "ID:" prefix - the panel title to its left already
+                     says this is the service order. -->
+                <Title text="{view>/serviceCall/externalId}" level="H5"/>
             </OverflowToolbar>
         </headerToolbar>
         

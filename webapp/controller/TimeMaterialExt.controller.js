@@ -1,37 +1,46 @@
 /**
- * View1.controller.js
- * 
+ * TimeMaterialExt.controller.js
+ *
  * Main controller for the Service Confirmation application.
- * Handles FSM Mobile web container integration, user organization level
- * resolution, activity loading, and T&M (Time & Materials) reporting.
- * 
- * @file View1.controller.js
- * @module com/tns/fsm/timematerialext/app/controller/View1
- * 
+ *
+ * This file is the COCKPIT: it owns the lifecycle, the view model, activity
+ * preparation and the small shared helpers, and it wires in every mixin. All
+ * feature behaviour lives in the mixins listed below - if you are looking for a
+ * handler, it is in one of them, not here.
+ *
+ * @file TimeMaterialExt.controller.js
+ * @module com/tns/fsm/timematerialext/app/controller/TimeMaterialExt
+ *
  * Initialization Flow:
  * 1. Load web container context (FSM Mobile sends userName, cloudId, etc.)
  * 2. Resolve user's organization level from FSM APIs
  * 3. Load organizational hierarchy for name lookups
  * 4. Load lookup data (tasks, items, expense types) in background
  * 5. Load activity from URL/context and filter by user's org level
- * 
+ *
  * Mixins:
- * - DataLoadingMixin: All data fetching and loading operations
- * - TMDialogMixin: Core T&M dialog handlers (enrichment, edit mode)
- * - TMEditMixin: Individual entry edit/save handlers
- * - TMTableMixin: Table filter/sort/edit selected handlers
- * - TMExpenseMileageMixin: Expense & Mileage creation handlers
- * - TMMaterialMixin: Material creation handlers
- * - TMTimeEntryMixin: Time entry creation with repeat
- * - TMSaveMixin: Save all T&M entries
- * - TechnicianMixin: Technician/task selection handlers
+ * - DataLoadingMixin:          All data fetching and loading operations
+ * - TMDialogMixin:             Core T&M dialog handlers (enrichment, edit mode)
+ * - TMEditMixin:               Individual entry edit/save handlers
+ * - TMTableMixin:              Table filter/sort/edit selected handlers
+ * - TMExpenseMileageMixin:     Expense & Mileage creation handlers
+ * - TMMaterialMixin:           Material entry creation handlers
+ * - TMTimeEntryMixin:          Time entry creation with repeat
+ * - TMSaveMixin:               Save all T&M entries
+ * - TechnicianMixin:           Technician/task selection handlers
+ * - TMUserSettingMixin:        User Settings dialog (FSM UDO TMExt_UserSettings)
+ * - TMTypeConfigurationMixin:  Type Configuration dialog - DORMANT, no control
+ *                              calls it; see the file header to re-enable
+ *
+ * Kept here on purpose: onShowContextInfo / onShowStatusLegend are two small
+ * read-only info dialogs with no state of their own, so they do not warrant
+ * their own mixins.
  */
 sap.ui.define([
     "sap/ui/core/mvc/Controller",
     "sap/ui/model/json/JSONModel",
     "sap/ui/core/Fragment",
     "sap/m/MessageToast",
-    "sap/m/MessageBox",
     "com/tns/fsm/timematerialext/app/model/formatter",
     "com/tns/fsm/timematerialext/app/utils/services/OrganizationService",
     "com/tns/fsm/timematerialext/app/utils/services/PersonService",
@@ -48,12 +57,16 @@ sap.ui.define([
     "./mixin/TMMaterialMixin",
     "./mixin/TMTimeEntryMixin",
     "./mixin/TMSaveMixin",
-    "./mixin/TechnicianMixin"
-], (Controller, JSONModel, Fragment, MessageToast, MessageBox, formatter, OrganizationService, PersonService, ItemService, UdfMetaService, TypeConfigService, CacheService, TMDialogService, DataLoadingMixin, TMDialogMixin, TMEditMixin, TMTableMixin, TMExpenseMileageMixin, TMMaterialMixin, TMTimeEntryMixin, TMSaveMixin, TechnicianMixin) => {
+    "./mixin/TechnicianMixin",
+    "./mixin/TMUserSettingMixin",
+    "./mixin/TMTypeConfigurationMixin"
+], (Controller, JSONModel, Fragment, MessageToast, formatter, OrganizationService, PersonService, ItemService, UdfMetaService, TypeConfigService, CacheService, TMDialogService, DataLoadingMixin, TMDialogMixin, TMEditMixin, TMTableMixin, TMExpenseMileageMixin, TMMaterialMixin, TMTimeEntryMixin, TMSaveMixin, TechnicianMixin, TMUserSettingMixin, TMTypeConfigurationMixin) => {
     "use strict";
 
     /**
-     * Merge all mixins with controller methods
+     * Merge all mixins with controller methods.
+     * Later entries win on name collisions - the controller's own methods are
+     * last, so they always take precedence.
      */
     return Controller.extend("com.tns.fsm.timematerialext.app.controller.TimeMaterialExt", Object.assign({},
         DataLoadingMixin,
@@ -65,6 +78,8 @@ sap.ui.define([
         TMTimeEntryMixin,
         TMSaveMixin,
         TechnicianMixin,
+        TMUserSettingMixin,
+        TMTypeConfigurationMixin,
         {
 
             formatter: formatter,
@@ -142,6 +157,10 @@ sap.ui.define([
                 // It calls /api/v1/get-type-config which requires the session.
                 // Wrapped in try/catch: TypeConfigService falls back to built-in
                 // defaults internally on fetch failure, so we proceed even if this rejects.
+                //
+                // NOTE: this stays even though the Type Config DIALOG is dormant -
+                // the service is what classifies activities as Expense / Mileage /
+                // Time & Material, which the whole view depends on.
                 try {
                     await TypeConfigService.init();
                 } catch (err) {
@@ -193,7 +212,15 @@ sap.ui.define([
                         timeZone: null,
                         timeZoneSource: null,
                         deviceTimeZone: null,
-                        timeZoneMismatch: false
+                        timeZoneMismatch: false,
+                        // Person identity of the logged-in user, filled by
+                        // DataLoadingMixin._loadOrganizationLevels().
+                        // personExternalIds[0] is what PERSON user settings store;
+                        // personDisplayName is what they show.
+                        personIds: [],
+                        personExternalIds: [],
+                        persons: [],
+                        personDisplayName: ""
                     },
 
                     serviceCall: {
@@ -528,7 +555,10 @@ sap.ui.define([
             },
 
             /* =========================================================================
-             * TYPE CONFIGURATION DIALOG HANDLERS
+             * INFO DIALOG HANDLERS
+             *
+             * Two read-only dialogs with no state of their own - they stay here
+             * rather than in mixins of their own.
              * ========================================================================= */
 
             /**
@@ -576,208 +606,6 @@ sap.ui.define([
             onCloseStatusLegendDialog() {
                 if (this._statusLegendDialog) {
                     this._statusLegendDialog.close();
-                }
-            },
-
-            /**
-             * Open Type Configuration Dialog
-             */
-            async onOpenTypeConfig() {
-                if (!this._typeConfigDialog) {
-                    this._typeConfigDialog = await Fragment.load({
-                        name: "com.tns.fsm.timematerialext.app.view.fragments.TypeConfigDialog",
-                        controller: this
-                    });
-                    this.getView().addDependent(this._typeConfigDialog);
-                }
-
-                // Refresh config from server before opening
-                await TypeConfigService.refreshConfig();
-
-                // Create model with current config
-                const typeConfigModel = new JSONModel({
-                    expenseTypes: [...TypeConfigService.getExpenseTypes()],
-                    mileageTypes: [...TypeConfigService.getMileageTypes()],
-                    busy: false
-                });
-                this._typeConfigDialog.setModel(typeConfigModel, "typeConfig");
-                this._typeConfigDialog.open();
-            },
-
-            /**
-             * Close Type Configuration Dialog
-             */
-            onCloseTypeConfig() {
-                if (this._typeConfigDialog) {
-                    this._typeConfigDialog.close();
-                }
-            },
-
-            /**
-             * Add Expense Type
-             */
-            async onAddExpenseType() {
-                const dialog = this._typeConfigDialog;
-                if (!dialog) return;
-
-                // Find the expense input field
-                const inputCtrl = dialog.getContent()[0]?.getItems()[1]?.getContent()[0]?.getItems()[0];
-                if (!inputCtrl || !inputCtrl.getValue) return;
-
-                const value = inputCtrl.getValue().trim().toUpperCase();
-                if (!value) {
-                    MessageToast.show(this._getText("msgEnterServiceProductId"));
-                    return;
-                }
-
-                // Get current user for audit
-                const viewModel = this.getView().getModel("view");
-                const modifiedBy = viewModel?.getProperty("/webContainerContext/userName") || "unknown";
-
-                this._setTypeConfigBusy(true);
-                const result = await TypeConfigService.addExpenseType(value, modifiedBy);
-                this._setTypeConfigBusy(false);
-
-                if (result.success) {
-                    this._refreshTypeConfigModel();
-                    inputCtrl.setValue("");
-                    MessageToast.show(this._getText("msgAddedExpenseType", [value]));
-                } else {
-                    MessageToast.show(result.message || this._getText("msgFailedAddType"));
-                }
-            },
-
-            /**
-             * Remove Expense Type
-             */
-            async onRemoveExpenseType(oEvent) {
-                const context = oEvent.getSource().getBindingContext("typeConfig");
-                if (!context) return;
-
-                const typeId = context.getObject();
-                const viewModel = this.getView().getModel("view");
-                const modifiedBy = viewModel?.getProperty("/webContainerContext/userName") || "unknown";
-
-                this._setTypeConfigBusy(true);
-                const result = await TypeConfigService.removeExpenseType(typeId, modifiedBy);
-                this._setTypeConfigBusy(false);
-
-                if (result.success) {
-                    this._refreshTypeConfigModel();
-                    MessageToast.show(this._getText("msgRemovedExpenseType", [typeId]));
-                } else {
-                    MessageToast.show(result.message || this._getText("msgFailedRemoveType"));
-                }
-            },
-
-            /**
-             * Add Mileage Type
-             */
-            async onAddMileageType() {
-                const dialog = this._typeConfigDialog;
-                if (!dialog) return;
-
-                // Find the mileage input field
-                const inputCtrl = dialog.getContent()[0]?.getItems()[2]?.getContent()[0]?.getItems()[0];
-                if (!inputCtrl || !inputCtrl.getValue) return;
-
-                const value = inputCtrl.getValue().trim().toUpperCase();
-                if (!value) {
-                    MessageToast.show(this._getText("msgEnterServiceProductId"));
-                    return;
-                }
-
-                const viewModel = this.getView().getModel("view");
-                const modifiedBy = viewModel?.getProperty("/webContainerContext/userName") || "unknown";
-
-                this._setTypeConfigBusy(true);
-                const result = await TypeConfigService.addMileageType(value, modifiedBy);
-                this._setTypeConfigBusy(false);
-
-                if (result.success) {
-                    this._refreshTypeConfigModel();
-                    inputCtrl.setValue("");
-                    MessageToast.show(this._getText("msgAddedMileageType", [value]));
-                } else {
-                    MessageToast.show(result.message || this._getText("msgFailedAddType"));
-                }
-            },
-
-            /**
-             * Remove Mileage Type
-             */
-            async onRemoveMileageType(oEvent) {
-                const context = oEvent.getSource().getBindingContext("typeConfig");
-                if (!context) return;
-
-                const typeId = context.getObject();
-                const viewModel = this.getView().getModel("view");
-                const modifiedBy = viewModel?.getProperty("/webContainerContext/userName") || "unknown";
-
-                this._setTypeConfigBusy(true);
-                const result = await TypeConfigService.removeMileageType(typeId, modifiedBy);
-                this._setTypeConfigBusy(false);
-
-                if (result.success) {
-                    this._refreshTypeConfigModel();
-                    MessageToast.show(this._getText("msgRemovedMileageType", [typeId]));
-                } else {
-                    MessageToast.show(result.message || this._getText("msgFailedRemoveType"));
-                }
-            },
-
-            /**
-             * Reset Type Configuration to Defaults
-             */
-            onResetTypeConfig() {
-                MessageBox.confirm(this._getText("msgResetConfigConfirm"), {
-                    title: this._getText("msgResetConfigTitle"),
-                    onClose: async (action) => {
-                        if (action === MessageBox.Action.OK) {
-                            const viewModel = this.getView().getModel("view");
-                            const modifiedBy = viewModel?.getProperty("/webContainerContext/userName") || "unknown";
-
-                            this._setTypeConfigBusy(true);
-                            const result = await TypeConfigService.resetToDefaults(modifiedBy);
-                            this._setTypeConfigBusy(false);
-
-                            if (result.success) {
-                                this._refreshTypeConfigModel();
-                                MessageToast.show(this._getText("msgConfigResetSuccess"));
-                            } else {
-                                MessageToast.show(this._getText("msgConfigResetFailed"));
-                            }
-                        }
-                    }
-                });
-            },
-
-            /**
-             * Set Type Config Dialog busy state
-             * @param {boolean} busy - Busy state
-             * @private
-             */
-            _setTypeConfigBusy(busy) {
-                if (this._typeConfigDialog) {
-                    const model = this._typeConfigDialog.getModel("typeConfig");
-                    if (model) {
-                        model.setProperty("/busy", busy);
-                    }
-                    this._typeConfigDialog.setBusy(busy);
-                }
-            },
-
-            /**
-             * Refresh Type Config Model
-             * @private
-             */
-            _refreshTypeConfigModel() {
-                if (this._typeConfigDialog) {
-                    const model = this._typeConfigDialog.getModel("typeConfig");
-                    if (model) {
-                        model.setProperty("/expenseTypes", [...TypeConfigService.getExpenseTypes()]);
-                        model.setProperty("/mileageTypes", [...TypeConfigService.getMileageTypes()]);
-                    }
                 }
             }
 

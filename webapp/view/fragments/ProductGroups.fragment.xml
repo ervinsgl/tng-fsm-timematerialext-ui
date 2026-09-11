@@ -2,19 +2,37 @@
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
 >
-    <!-- 
+    <!--
         ProductGroups Fragment: Displays activities grouped by product.
-        
+
         Structure per group:
         - Panel header: Product description + SO Item ID + activity count
         - Per activity: Toolbar (code, subject, T&M buttons) + T&M tables
         - Three table types: Time/Material, Expense, Mileage (filtered by type config)
         - Tables support inline edit mode, row selection, sort, and batch operations
-        
+
+        Status badges (all three tables):
+        - DECLINED        is shown as CHANGE
+        - DECLINED_CLOSED is shown as REJECTED
+        Every other code is shown as-is.
+
+        T&M summary colours (Material / Arbeitszeit / Fahrzeit / Wartezeit):
+        - The colour is NOT decided here. TMDataService.resolveSummaryState() writes
+          one ValueState per entry type (tmMaterialSummaryState / tmAzSummaryState /
+          tmFzSummaryState / tmWzSummaryState):
+              Error   = red    (a CHANGE entry exists)
+              Warning = orange (a PENDING or REVIEW entry exists)
+              None    = grey   (no entries, or all REJECTED)
+              Success = green  (all APPROVED and/or REJECTED)
+        - The ObjectNumber binds it as `state` (red/orange/green come from the theme)
+          and BOTH the Label and the ObjectNumber carry it as customData
+          (data-tmstate) because `class` cannot be bound in XML views - style.css
+          colours the labels and handles the grey case.
+
         Model: view>/productGroups
     -->
     <VBox class="sapUiResponsiveMargin">
-    
+
         <!-- Empty State - No Activities for User's Org Level -->
         <IllustratedMessage
             illustrationType="sapIllus-NoEntries"
@@ -26,7 +44,7 @@
                 <Button text="{i18n>productGroupsRefresh}" type="Emphasized" icon="sap-icon://refresh" press=".onRefresh"/>
             </additionalContent>
         </IllustratedMessage>
-        
+
         <!-- Product Groups List -->
         <List items="{view>/productGroups}" mode="None" showSeparators="None" visible="{= ${view>/productGroups}.length > 0 }">
             <CustomListItem type="Inactive">
@@ -34,9 +52,11 @@
                     <headerToolbar>
                         <OverflowToolbar design="Info">
                             <core:Icon src="sap-icon://product" class="sapUiSmallMarginEnd"/>
-                            <Title text="{i18n>productGroupsProduct} {view>productDescription}" wrapping="true"/>
+                            <Title text="{view>productDescription}" wrapping="true"/>
                             <ToolbarSpacer/>
-                            <Text text="{i18n>serviceOrderId} {view>soItemId}" class="sapUiTinyMarginEnd"/>
+                            <!-- Bare ID, no "ID:" prefix - the position and the italic
+                                 styling already say what it is. -->
+                            <Text text="{view>soItemId}" class="sapUiTinyMarginEnd"/>
                         </OverflowToolbar>
                     </headerToolbar>
                     <content>
@@ -45,7 +65,7 @@
                             <ToolbarSpacer/>
                             <ObjectNumber number="{view>tmTotalCount}" unit="{i18n>productGroupsTMEntries}" state="Information"/>
                         </Toolbar>
-                        
+
                         <List items="{path: 'view>activities', templateShareable: false}" mode="None" showSeparators="None" growing="true" growingThreshold="20">
                             <CustomListItem type="Inactive" class="activityListItem">
                                 <Panel expandable="true" expanded="{view>detailsExpanded}" class="activityEntryPanel">
@@ -56,23 +76,68 @@
                                     <headerToolbar>
                                         <OverflowToolbar design="Info" class="activityHeaderToolbar">
                                             <core:Icon src="sap-icon://activity-individual" class="sapUiSmallMarginEnd"/>
-                                            <Title text="ID: {view>externalId}" level="H5" class="sapUiSmallMarginEnd activityHeaderId"/>
-                                            <Title text="{view>subject}" level="H5" wrapping="false" class="activityHeaderSubject" width="100%">
+                                            <Title text="{view>externalId}" level="H5" class="sapUiSmallMarginEnd activityHeaderId"/>
+                                            <!-- Collapsed-header subject. On a narrow screen this used
+                                                 to wrap into a tall tower and push the T&M summary out of
+                                                 view, so style.css clamps it to two lines and hides it
+                                                 below a breakpoint - where the copy in the expanded
+                                                 detail (activityDetailSubject, below) takes over. The
+                                                 tooltip keeps the full text reachable while clamped. -->
+                                            <Title text="{view>subject}" level="H5" wrapping="false" tooltip="{view>subject}" class="activityHeaderSubject" width="100%">
                                                 <layoutData>
                                                     <OverflowToolbarLayoutData shrinkable="true" priority="NeverOverflow" maxWidth="100%"/>
                                                 </layoutData>
                                             </Title>
-                                            <!-- Collapsed-header T&M summary: shown only while the activity panel is collapsed, for Time & Material activities once totals are loaded. Hidden when expanded (the detail panel shows its own summary). -->
-                                            <Label text="{i18n>activityMaterial}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="sapUiTinyMarginBegin"/>
-                                            <ObjectNumber number="{path: 'view>tmMaterialQtyReported', formatter: '.formatter.formatQuantity'}" state="{= ${view>tmMaterialQtyReported} > 0 ? 'Information' : 'None'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }"/>
-                                            <Text text="/" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }"/>
-                                            <Text text="{path: 'view>quantity', formatter: '.formatter.formatQuantity'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="sapUiSmallMarginEnd"/>
-                                            <Label text="{i18n>activityArbeitszeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin"/>
-                                            <ObjectNumber number="{view>tmAzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmAzHoursReported} > 0 ? 'Information' : 'None'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }"/>
-                                            <Label text="{i18n>activityFahrzeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin"/>
-                                            <ObjectNumber number="{view>tmFzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmFzHoursReported} > 0 ? 'Information' : 'None'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }"/>
-                                            <Label text="{i18n>activityWartezeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin"/>
-                                            <ObjectNumber number="{view>tmWzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmWzHoursReported} > 0 ? 'Information' : 'None'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }"/>
+                                            <!-- Collapsed-header T&M summary: shown only while the activity panel is
+                                                 collapsed, for Time & Material activities once totals are loaded.
+                                                 Hidden when expanded (the detail panel shows its own summary).
+
+                                                 Every control of the summary carries the activityHeaderSummary class
+                                                 so style.css can drop the whole group in one rule on a very narrow
+                                                 screen, where the numbers were being clipped mid-word and squeezing
+                                                 the activity ID. Add the class to any control added to this group. -->
+                                            <Label text="{i18n>activityMaterial}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="sapUiTinyMarginBegin activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmMaterialSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </Label>
+                                            <ObjectNumber number="{path: 'view>tmMaterialQtyReported', formatter: '.formatter.formatQuantity'}" state="{view>tmMaterialSummaryState}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmMaterialSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </ObjectNumber>
+                                            <Text text="/" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="activityHeaderSummary"/>
+                                            <Text text="{path: 'view>quantity', formatter: '.formatter.formatQuantity'}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true &amp;&amp; ${view>quantity} > 0 }" class="sapUiSmallMarginEnd activityHeaderSummary"/>
+                                            <Label text="{i18n>activityArbeitszeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmAzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </Label>
+                                            <ObjectNumber number="{view>tmAzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmAzSummaryState}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmAzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </ObjectNumber>
+                                            <Label text="{i18n>activityFahrzeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmFzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </Label>
+                                            <ObjectNumber number="{view>tmFzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmFzSummaryState}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmFzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </ObjectNumber>
+                                            <Label text="{i18n>activityWartezeit}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="sapUiTinyMarginBegin activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmWzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </Label>
+                                            <ObjectNumber number="{view>tmWzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmWzSummaryState}" visible="{= ${view>detailsExpanded} !== true &amp;&amp; ${view>isTimeMaterialType} === true &amp;&amp; ${view>tmReportsLoaded} === true }" class="activityHeaderSummary">
+                                                <customData>
+                                                    <core:CustomData key="tmstate" value="{view>tmWzSummaryState}" writeToDom="true"/>
+                                                </customData>
+                                            </ObjectNumber>
                                         </OverflowToolbar>
                                     </headerToolbar>
                                     <content>
@@ -82,7 +147,12 @@
                                             <ObjectStatus text="{view>status}" state="{view>statusState}" class="sapUiTinyMarginEnd"/>
                                             <ObjectStatus text="{view>executionStage}" state="{view>stageState}"/>
                                         </Toolbar>
-                                        
+
+                                        <!-- Subject, shown here only on the narrow screens where the
+                                             collapsed header hides it (style.css decides). Full width
+                                             and free to wrap - there is room for it here. -->
+                                        <Title text="{view>subject}" level="H6" wrapping="true" class="activityDetailSubject sapUiTinyMarginBottom"/>
+
                                         <HBox class="activityEntryContent">
                                             <VBox class="activityColumn">
                                                 <HBox class="activityFieldRow">
@@ -127,7 +197,7 @@
                                                 </HBox>
                                             </VBox>
                                         </HBox>
-                                        
+
                                         <!-- T&M REPORTS SECTION -->
                                         <VBox class="tmTablesSection sapUiSmallMarginTop">
                                             <HBox alignItems="Center" class="sapUiTinyMarginBottom sapUiSmallMarginBegin">
@@ -135,31 +205,64 @@
                                                 <Label text="{i18n>activityTMReports}" design="Bold"/>
                                                 <ObjectNumber number="{view>tmReportsCount}" unit="{i18n>activityItemsUnit}" state="{= ${view>tmReportsCount} > 0 ? 'Success' : 'None'}" class="sapUiTinyMarginBegin"/>
                                             </HBox>
-                                            
-                                            <!-- T&M Summary Stats - Only show for Time & Material activities (not expense/mileage) -->
+
+                                            <!-- T&M Summary Stats - Only show for Time & Material activities (not expense/mileage).
+                                                 Totals exclude REJECTED (DECLINED_CLOSED) entries; the state comes from TMDataService. -->
                                             <HBox visible="{= ${view>tmReportsLoaded} &amp;&amp; ${view>isTimeMaterialType} }" class="sapUiTinyMarginBottom sapUiSmallMarginBegin" wrap="Wrap">
                                                 <VBox class="sapUiSmallMarginEnd" visible="{= ${view>quantity} > 0 }">
-                                                    <Label text="{i18n>activityMaterial}"/>
+                                                    <Label text="{i18n>activityMaterial}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmMaterialSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </Label>
                                                     <HBox alignItems="Center">
-                                                        <ObjectNumber number="{path: 'view>tmMaterialQtyReported', formatter: '.formatter.formatQuantity'}" state="{= ${view>tmMaterialQtyReported} > 0 ? 'Information' : 'None'}"/>
+                                                        <ObjectNumber number="{path: 'view>tmMaterialQtyReported', formatter: '.formatter.formatQuantity'}" state="{view>tmMaterialSummaryState}">
+                                                            <customData>
+                                                                <core:CustomData key="tmstate" value="{view>tmMaterialSummaryState}" writeToDom="true"/>
+                                                            </customData>
+                                                        </ObjectNumber>
                                                         <Text text=" / " class="sapUiTinyMarginBeginEnd"/>
                                                         <Text text="{path: 'view>quantity', formatter: '.formatter.formatQuantity'}"/>
                                                     </HBox>
                                                 </VBox>
                                                 <VBox class="sapUiSmallMarginEnd">
-                                                    <Label text="{i18n>activityArbeitszeit}"/>
-                                                    <ObjectNumber number="{view>tmAzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmAzHoursReported} > 0 ? 'Information' : 'None'}"/>
+                                                    <Label text="{i18n>activityArbeitszeit}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmAzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </Label>
+                                                    <ObjectNumber number="{view>tmAzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmAzSummaryState}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmAzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </ObjectNumber>
                                                 </VBox>
                                                 <VBox class="sapUiSmallMarginEnd">
-                                                    <Label text="{i18n>activityFahrzeit}"/>
-                                                    <ObjectNumber number="{view>tmFzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmFzHoursReported} > 0 ? 'Information' : 'None'}"/>
+                                                    <Label text="{i18n>activityFahrzeit}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmFzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </Label>
+                                                    <ObjectNumber number="{view>tmFzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmFzSummaryState}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmFzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </ObjectNumber>
                                                 </VBox>
                                                 <VBox>
-                                                    <Label text="{i18n>activityWartezeit}"/>
-                                                    <ObjectNumber number="{view>tmWzHoursReported}" unit="{i18n>activityHoursUnit}" state="{= ${view>tmWzHoursReported} > 0 ? 'Information' : 'None'}"/>
+                                                    <Label text="{i18n>activityWartezeit}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmWzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </Label>
+                                                    <ObjectNumber number="{view>tmWzHoursReported}" unit="{i18n>activityHoursUnit}" state="{view>tmWzSummaryState}">
+                                                        <customData>
+                                                            <core:CustomData key="tmstate" value="{view>tmWzSummaryState}" writeToDom="true"/>
+                                                        </customData>
+                                                    </ObjectNumber>
                                                 </VBox>
                                             </HBox>
-                                            
+
                                             <!-- TIME & MATERIAL TABLE -->
                                             <Panel expandable="true" expanded="true" visible="{= (${view>tmTimeEffortCount} + ${view>tmMaterialCount}) > 0 }" class="tmTypePanel">
                                                 <headerToolbar>
@@ -185,13 +288,17 @@
                                                         <Button text="{i18n>tmSaveAll}" icon="sap-icon://save" type="Emphasized" press=".onSaveAllTM" visible="{= ${view>tmEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmEndEdit}" icon="sap-icon://sys-cancel" press=".onEndEditTM" visible="{= ${view>tmEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmAddEntry}" icon="sap-icon://add" type="Emphasized" press=".onAddNewTMEntry" visible="{= ${view>isReadOnly} !== true}" class="sapUiTinyMarginBegin"/>
-                                                        <ObjectStatus 
-                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}" 
-                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}" 
+                                                        <ObjectStatus
+                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}"
+                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}"
                                                             icon="{= ${view>isCancelled} ? 'sap-icon://decline' : 'sap-icon://locked'}"
                                                             visible="{= ${view>isReadOnly} === true}"
                                                             class="sapUiTinyMarginBegin"/>
-                                                        <ObjectNumber number="{= ${view>tmTimeEffortCount} + ${view>tmMaterialCount} }" unit="{i18n>tmEntriesUnit}" class="sapUiSmallMarginBegin"/>
+                                                        <!-- Entry count removed: the same number is already on the
+                                                             "T&amp;M reports" line just above the summary, so repeating it
+                                                             here only crowded the toolbar. The Expense and Mileage
+                                                             tables below keep theirs - those per-type counts appear
+                                                             nowhere else (the line above is the grand total). -->
                                                     </OverflowToolbar>
                                                 </headerToolbar>
                                                 <content>
@@ -223,7 +330,7 @@
                                                                     <cells>
                                                                         <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED'}"/>
                                                                         <core:Icon src="{= ${view>type} === 'Time Effort' ? 'sap-icon://time-entry-request' : 'sap-icon://product'}" color="{= ${view>type} === 'Time Effort' ? '#0854A0' : '#107E3E'}" tooltip="{view>type}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'DECLINED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{= ${view>type} === 'Time Effort' ? ${view>taskDisplayText} : ${view>itemDisplayText}}" wrapping="false"/>
                                                                         <Text text="{view>createPersonDisplayText}" wrapping="false"/>
                                                                         <!-- Time: one-part duration stepper (create-dialog styling), edit mode only -->
@@ -247,7 +354,7 @@
                                                     </ScrollContainer>
                                                 </content>
                                             </Panel>
-                                            
+
                                             <!-- EXPENSES TABLE -->
                                             <Panel expandable="true" expanded="true" visible="{= ${view>tmExpenseCount} > 0 }" class="tmTypePanel">
                                                 <headerToolbar>
@@ -266,9 +373,9 @@
                                                         <Button text="{i18n>tmSaveAll}" icon="sap-icon://save" type="Emphasized" press=".onSaveAllTM" visible="{= ${view>expenseEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmEndEdit}" icon="sap-icon://sys-cancel" press=".onEndEditTM" visible="{= ${view>expenseEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmAddEntry}" icon="sap-icon://add" type="Emphasized" press=".onAddNewTMEntry" visible="{= ${view>isReadOnly} !== true}" class="sapUiTinyMarginBegin"/>
-                                                        <ObjectStatus 
-                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}" 
-                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}" 
+                                                        <ObjectStatus
+                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}"
+                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}"
                                                             icon="{= ${view>isCancelled} ? 'sap-icon://decline' : 'sap-icon://locked'}"
                                                             visible="{= ${view>isReadOnly} === true}"
                                                             class="sapUiTinyMarginBegin"/>
@@ -302,7 +409,7 @@
                                                                 <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED_CLOSED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
                                                                     <cells>
                                                                         <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED'}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'DECLINED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{view>expenseTypeDisplayText}" wrapping="false"/>
                                                                         <Text text="{view>createPersonDisplayText}" wrapping="false"/>
                                                                         <Input value="{view>externalAmountValue}" type="Number" width="5rem" editable="{view>editMode}"/>
@@ -318,7 +425,7 @@
                                                     </ScrollContainer>
                                                 </content>
                                             </Panel>
-                                            
+
                                             <!-- MILEAGE TABLE -->
                                             <Panel expandable="true" expanded="true" visible="{= ${view>tmMileageCount} > 0 }" class="tmTypePanel">
                                                 <headerToolbar>
@@ -337,9 +444,9 @@
                                                         <Button text="{i18n>tmSaveAll}" icon="sap-icon://save" type="Emphasized" press=".onSaveAllTM" visible="{= ${view>mileageEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmEndEdit}" icon="sap-icon://sys-cancel" press=".onEndEditTM" visible="{= ${view>mileageEditMode} === true}" class="sapUiTinyMarginBegin"/>
                                                         <Button text="{i18n>tmAddEntry}" icon="sap-icon://add" type="Emphasized" press=".onAddNewTMEntry" visible="{= ${view>isReadOnly} !== true}" class="sapUiTinyMarginBegin"/>
-                                                        <ObjectStatus 
-                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}" 
-                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}" 
+                                                        <ObjectStatus
+                                                            text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}"
+                                                            state="{= ${view>isCancelled} ? 'Error' : 'None'}"
                                                             icon="{= ${view>isCancelled} ? 'sap-icon://decline' : 'sap-icon://locked'}"
                                                             visible="{= ${view>isReadOnly} === true}"
                                                             class="sapUiTinyMarginBegin"/>
@@ -374,7 +481,7 @@
                                                                 <ColumnListItem type="Inactive" highlight="{= ${view>decisionStatus} === 'APPROVED' ? 'Success' : (${view>decisionStatus} === 'DECLINED_CLOSED' || ${view>decisionStatus} === 'CANCELLED') ? 'Error' : ${view>editMode} ? 'Information' : 'None'}">
                                                                     <cells>
                                                                         <CheckBox selected="{view>selected}" visible="{= ${view>decisionStatus} === 'PENDING' || ${view>decisionStatus} === 'DECLINED'}"/>
-                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'DECLINED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
+                                                                        <ObjectStatus text="{= ${view>decisionStatus} === 'DECLINED' ? 'CHANGE' : ${view>decisionStatus} === 'DECLINED_CLOSED' ? 'REJECTED' : ${view>decisionStatus}}" state="{view>decisionStatusState}"/>
                                                                         <Text text="{view>mileageTypeDisplayText}"/>
                                                                         <Text text="{view>createPersonDisplayText}"/>
                                                                         <Input value="{view>distanceValue}" type="Number" width="100%" editable="{view>editMode}"/>
@@ -391,15 +498,15 @@
                                                     </ScrollContainer>
                                                 </content>
                                             </Panel>
-                                            
+
                                             <!-- Empty State -->
                                             <VBox visible="{= ${view>tmReportsCount} === 0 }" alignItems="Center" class="sapUiMediumMarginTopBottom">
                                                 <core:Icon src="sap-icon://document" size="2rem" color="#888"/>
                                                 <Text text="{i18n>tmNoEntries}" class="sapUiTinyMarginTop"/>
                                                 <Button text="{i18n>tmAddEntry}" icon="sap-icon://add" type="Emphasized" press=".onAddNewTMEntry" visible="{= ${view>isReadOnly} !== true}" class="sapUiSmallMarginTop"/>
-                                                <ObjectStatus 
-                                                    text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}" 
-                                                    state="{= ${view>isCancelled} ? 'Error' : 'None'}" 
+                                                <ObjectStatus
+                                                    text="{= ${view>isCancelled} ? ${i18n>activityCancelled} : ${i18n>activityClosed}}"
+                                                    state="{= ${view>isCancelled} ? 'Error' : 'None'}"
                                                     icon="{= ${view>isCancelled} ? 'sap-icon://decline' : 'sap-icon://locked'}"
                                                     visible="{= ${view>isReadOnly} === true}"
                                                     class="sapUiSmallMarginTop"/>

@@ -1,9 +1,9 @@
 /**
  * lookupRoutes.js
- * 
+ *
  * Express Router for lookup/reference data endpoints.
  * Mounted at /api in index.js.
- * 
+ *
  * Endpoints:
  * - POST /api/get-persons                        - Get all persons (technicians)
  * - POST /api/get-person-by-id                   - Get person by ID
@@ -14,9 +14,11 @@
  * - GET  /api/get-items                           - Item lookup
  * - GET  /api/get-expense-types                   - Expense type lookup
  * - POST /api/get-udf-meta                        - UDF Meta externalId lookup
+ * - GET  /api/get-user-settings                   - TMExt_UserSettings UDO records
+ * - POST /api/save-user-setting                   - create/update one settings record
  * - POST /api/get-approval-status                 - Approval status batch lookup
  * - POST /api/get-user-org-level                  - Resolve user's org level
- * 
+ *
  * @file routes/lookupRoutes.js
  * @requires ../utils/FSMService
  */
@@ -137,7 +139,7 @@ router.get("/get-organization-levels-full", async (req, res) => {
 router.get("/get-time-tasks", async (req, res) => {
     try {
         const timeTasks = await FSMService.getTimeTasks();
-        
+
         res.json({
             timeTasks: timeTasks,
             count: timeTasks.length
@@ -156,7 +158,7 @@ router.get("/get-time-tasks", async (req, res) => {
 router.get("/get-items", async (req, res) => {
     try {
         const items = await FSMService.getItems();
-        
+
         res.json({
             items: items,
             count: items.length
@@ -175,7 +177,7 @@ router.get("/get-items", async (req, res) => {
 router.get("/get-expense-types", async (req, res) => {
     try {
         const expenseTypes = await FSMService.getExpenseTypes();
-        
+
         res.json({
             expenseTypes: expenseTypes,
             count: expenseTypes.length
@@ -200,7 +202,7 @@ router.post("/get-udf-meta", async (req, res) => {
 
     try {
         const externalId = await FSMService.getUdfMetaById(udfMetaId);
-        
+
         res.json({
             id: udfMetaId,
             externalId: externalId
@@ -210,6 +212,86 @@ router.post("/get-udf-meta", async (req, res) => {
         console.error("Error fetching UDF Meta:", error.message);
         res.status(error.response?.status || 500).json({
             message: error.response?.data?.message || 'Failed to fetch UDF Meta',
+            error: error.response?.data || error.message
+        });
+    }
+});
+
+/**
+ * Get User Settings (UDO 'TMExt_UserSettings').
+ *
+ * Returns both halves in one call:
+ *   definition - every field the UDO can hold (UdoMeta.udfMetas), each with its
+ *                label and, for SELECTIONLIST fields, its allowed options
+ *   records    - the settings actually stored (UdoValue), one entry per record
+ *
+ * All UDF meta UUIDs are already resolved to readable labels - see
+ * utils/FSMUdoService.js for why that resolution happens server-side instead of
+ * one lookup per UUID from the browser.
+ *
+ * Query: ?personExternalId=egleizds1 restricts records to that person's own
+ *        record (zero or one). Without it, every record is returned.
+ *
+ * Response: { success, udoName, definition: { fields: [...] },
+ *             records: [ { id, settings: [ { label, value } ] } ], count }
+ */
+router.get("/get-user-settings", async (req, res) => {
+    const { personExternalId } = req.query;
+
+    try {
+        const data = await FSMService.getUserSettings(undefined, personExternalId || null);
+
+        res.json({
+            success: true,
+            udoName: data.udoName,
+            definition: data.definition,
+            records: data.records,
+            count: data.records.length
+        });
+
+    } catch (error) {
+        console.error("Error fetching user settings:", error.message);
+        res.status(error.response?.status || 500).json({
+            message: error.response?.data?.message || 'Failed to fetch user settings',
+            error: error.response?.data || error.message
+        });
+    }
+});
+
+/**
+ * Create or update the current user's settings record (UDO 'TMExt_UserSettings').
+ *
+ * Body: {
+ *   personExternalId: "egleizds1",
+ *   values: [ { externalId: "z_TM_DateType", value: "1" }, ... ]
+ * }
+ *
+ * Upsert by externalId "<UdoMeta id>_<personExternalId>" - see saveUserSetting
+ * in utils/FSMUdoService.js. Selection values are the CODE, not the display text.
+ */
+router.post("/save-user-setting", async (req, res) => {
+    const { personExternalId, values } = req.body;
+
+    if (!personExternalId) {
+        return res.status(400).json({ message: 'personExternalId is required' });
+    }
+    if (!Array.isArray(values) || values.length === 0) {
+        return res.status(400).json({ message: 'values array is required' });
+    }
+
+    try {
+        const result = await FSMService.saveUserSetting(values, personExternalId);
+
+        res.json({
+            success: true,
+            externalId: result.externalId,
+            created: result.created
+        });
+
+    } catch (error) {
+        console.error("Error saving user setting:", error.message);
+        res.status(error.response?.status || 500).json({
+            message: error.response?.data?.message || 'Failed to save user setting',
             error: error.response?.data || error.message
         });
     }
@@ -225,7 +307,7 @@ router.post("/get-approval-status", async (req, res) => {
 
     try {
         const statusMap = await FSMService.getApprovalStatusBatch(objectIds);
-        
+
         res.json({
             statuses: statusMap,
             count: Object.keys(statusMap).length
@@ -251,9 +333,9 @@ router.post("/get-user-org-level", async (req, res) => {
 
     try {
         const userOrgLevel = await FSMService.getUserOrgLevel(username);
-        
+
         if (!userOrgLevel) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 message: 'User or organization level not found',
                 username: username
             });

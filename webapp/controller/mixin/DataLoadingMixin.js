@@ -1,20 +1,30 @@
 /**
  * DataLoadingMixin.js
- * 
+ *
  * Mixin containing all data loading and fetching methods.
  * Handles initialization loading, activity loading, and T&M batch loading.
- * 
+ *
  * Responsibilities:
  * - Organization level loading and user resolution
  * - Lookup data loading (tasks, items, expense types)
  * - Web container context loading
  * - Activity and service call loading (supports both entry points)
  * - T&M reports batch loading
- * 
+ *
  * Entry Points:
  * - Activity: Fetches activity first to get service call ID, then loads service call
  * - ServiceCall: Goes directly to service call API (skips activity fetch)
- * 
+ *
+ * Visibility policy (changed):
+ * - Activities are filtered by ORGANIZATION LEVEL only.
+ * - The former assignment filter (responsible / supporting technician) has been
+ *   REMOVED. Every user who can open the app sees every activity of the service
+ *   order that matches their organization level, regardless of whether they are
+ *   the responsible or a supporting technician on it.
+ * - Access restriction is handled in FSM Admin via Policy Groups, not in the app.
+ * - personIds / personExternalIds are still resolved and kept on
+ *   /webContainerContext for display and diagnostics, but nothing filters on them.
+ *
  * @file DataLoadingMixin.js
  * @module com/tns/fsm/timematerialext/app/controller/mixin/DataLoadingMixin
  */
@@ -32,12 +42,13 @@ sap.ui.define([
     "com/tns/fsm/timematerialext/app/utils/services/ApprovalService",
     "com/tns/fsm/timematerialext/app/utils/services/UdfMetaService",
     "com/tns/fsm/timematerialext/app/utils/services/TechnicianService",
+    "com/tns/fsm/timematerialext/app/utils/services/UserSettingsService",
     "com/tns/fsm/timematerialext/app/utils/services/ContextService",
     "com/tns/fsm/timematerialext/app/utils/services/TimeZoneService",
     "com/tns/fsm/timematerialext/app/utils/helpers/URLHelper",
     "com/tns/fsm/timematerialext/app/utils/helpers/ProductGroupService",
     "com/tns/fsm/timematerialext/app/utils/tm/TMDataService"
-], (MessageToast, MessageBox, OrganizationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, ServiceOrderService, PersonService, BusinessPartnerService, ApprovalService, UdfMetaService, TechnicianService, ContextService, TimeZoneService, URLHelper, ProductGroupService, TMDataService) => {
+], (MessageToast, MessageBox, OrganizationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, ServiceOrderService, PersonService, BusinessPartnerService, ApprovalService, UdfMetaService, TechnicianService, UserSettingsService, ContextService, TimeZoneService, URLHelper, ProductGroupService, TMDataService) => {
     "use strict";
 
     return {
@@ -62,12 +73,26 @@ sap.ui.define([
 
                 if (userName && userName !== 'N/A') {
                     const resolvedOrgLevel = await OrganizationService.getUserResolvedOrgLevel(userName);
-                    
+
                     if (resolvedOrgLevel && resolvedOrgLevel.found) {
                         viewModel.setProperty("/webContainerContext/orgLevelId", resolvedOrgLevel.id);
                         viewModel.setProperty("/webContainerContext/orgLevelName", resolvedOrgLevel.name);
+                        // Person identity. Not used for activity filtering any more;
+                        // personExternalIds feeds PERSON fields in User Settings
+                        // (the value a PATCH writes) and personDisplayName is what
+                        // the table shows.
                         viewModel.setProperty("/webContainerContext/personIds", resolvedOrgLevel.personIds || []);
                         viewModel.setProperty("/webContainerContext/personExternalIds", resolvedOrgLevel.personExternalIds || []);
+                        viewModel.setProperty("/webContainerContext/persons", resolvedOrgLevel.persons || []);
+                        viewModel.setProperty("/webContainerContext/personDisplayName", resolvedOrgLevel.personDisplayName || "");
+
+                        // Warm the user settings now that the person is known, so the
+                        // first "Add Entry" does not wait for them. Fire-and-forget:
+                        // the dialog awaits them anyway, and a failure here only means
+                        // entries fall back to the activity's planned start date.
+                        UserSettingsService.ensureLoaded(
+                            (resolvedOrgLevel.personExternalIds || [])[0] || ""
+                        );
                         viewModel.setProperty("/selectedOrganizationLevel", {
                             key: resolvedOrgLevel.id,
                             text: resolvedOrgLevel.name
@@ -79,10 +104,13 @@ sap.ui.define([
                         return;
                     } else {
                         viewModel.setProperty("/webContainerContext/orgLevelName", "Not Assigned");
-                        // Still store person IDs if available (for logging/debugging)
+                        // Person identity is independent of the org level match, so
+                        // store it here too - User Settings still needs it.
                         if (resolvedOrgLevel) {
                             viewModel.setProperty("/webContainerContext/personIds", resolvedOrgLevel.personIds || []);
                             viewModel.setProperty("/webContainerContext/personExternalIds", resolvedOrgLevel.personExternalIds || []);
+                            viewModel.setProperty("/webContainerContext/persons", resolvedOrgLevel.persons || []);
+                            viewModel.setProperty("/webContainerContext/personDisplayName", resolvedOrgLevel.personDisplayName || "");
                         }
                     }
                 } else {
@@ -158,18 +186,18 @@ sap.ui.define([
          */
         async _loadWebContainerContext() {
             const viewModel = this.getView().getModel("view");
-            
+
             try {
                 // Get context from ContextService (handles both Mobile and Shell)
                 const context = await ContextService.getContext();
-                
+
                 if (context && (context.source === 'shell' || context.source === 'mobile')) {
                     // Set UI5 language from context (de, en, etc.)
                     const contextLanguage = context.locale || context.language;
                     if (contextLanguage) {
                         this._setAppLanguage(contextLanguage);
                     }
-                    
+
                     viewModel.setProperty("/webContainerContext", {
                         available: true,
                         userName: context.userName || 'N/A',
@@ -185,7 +213,7 @@ sap.ui.define([
                         cloudHost: context.cloudHost,
                         ...this._timeZoneModelFields()
                     });
-                    
+
                     URLHelper.setWebContainerContext({
                         userName: context.userName,
                         cloudId: context.objectId,
@@ -193,10 +221,10 @@ sap.ui.define([
                         companyName: context.companyName,
                         cloudAccount: context.accountName
                     });
-                    
+
                     return context;
                 }
-                
+
                 // URL params or no context - set minimal context
                 if (context && context.source === 'url') {
                     viewModel.setProperty("/webContainerContext", {
@@ -214,7 +242,7 @@ sap.ui.define([
                     });
                     return context;
                 }
-                
+
                 return null;
             } catch (error) {
                 console.error("_loadWebContainerContext error:", error);
@@ -266,14 +294,14 @@ sap.ui.define([
          */
         _setAppLanguage(language) {
             if (!language) return;
-            
+
             // Normalize language code (e.g., 'de-DE' -> 'de')
             const langCode = language.toLowerCase().split('-')[0].split('_')[0];
-            
+
             // Get current UI5 language
             const currentLang = sap.ui.getCore().getConfiguration().getLanguage();
             const currentLangCode = currentLang.toLowerCase().split('-')[0].split('_')[0];
-            
+
             // Only change if different
             if (langCode !== currentLangCode) {
                 sap.ui.getCore().getConfiguration().setLanguage(langCode);
@@ -287,7 +315,7 @@ sap.ui.define([
          */
         async _loadFromContext() {
             const contextInfo = await URLHelper.getContextInfo();
-            
+
             if (!contextInfo) {
                 return;
             }
@@ -371,7 +399,14 @@ sap.ui.define([
         },
 
         /**
-         * Load all activities for a service call
+         * Load all activities for a service call.
+         *
+         * Filtering: ORGANIZATION LEVEL ONLY.
+         * The assignment filter (responsible / supporting technician) was removed -
+         * every user who can open the app sees all activities of the service order
+         * that match their organization level. Who may open the app at all is
+         * controlled in FSM Admin via Policy Groups.
+         *
          * @private
          */
         async _loadServiceCallActivities(serviceCallId) {
@@ -385,22 +420,20 @@ sap.ui.define([
 
                 const userOrgLevelId = viewModel.getProperty("/webContainerContext/orgLevelId");
                 const userOrgLevelName = viewModel.getProperty("/webContainerContext/orgLevelName");
-                const userPersonIds = viewModel.getProperty("/webContainerContext/personIds") || [];
-                const userPersonExternalIds = viewModel.getProperty("/webContainerContext/personExternalIds") || [];
 
                 // Filter activities by execution stage:
                 // - EXECUTION: Active, can add entries
                 // - CLOSED: Read-only, show "Activity Closed"
                 // - CANCELLED: Read-only, show "Activity Cancelled"
                 let filteredActivities = allActivities.filter(activity =>
-                    activity.executionStage === "EXECUTION" || 
+                    activity.executionStage === "EXECUTION" ||
                     activity.executionStage === "CLOSED" ||
                     activity.executionStage === "CANCELLED"
                 );
-                
+
                 const totalVisibleCount = filteredActivities.length;
 
-                // FILTER 1: Organization level (mandatory)
+                // FILTER: Organization level (mandatory, and the only filter)
                 // If user has no org level resolved → show NO activities
                 if (!userOrgLevelId) {
                     filteredActivities = [];
@@ -421,52 +454,12 @@ sap.ui.define([
                         });
                     });
 
-                    // FILTER 2: User assignment (responsible or supporting technician)
-                    if (filteredActivities.length > 0 && (userPersonIds.length > 0 || userPersonExternalIds.length > 0)) {
-                        // Phase 1: Check responsible match from composite-tree (no API call)
-                        const responsibleActivities = [];
-                        const needsSupportCheck = [];
+                    // NOTE: The former "FILTER 2: User assignment (responsible or
+                    // supporting technician)" block was removed here. It fetched
+                    // ActivityService.fetchActivityTechnicians() per activity purely
+                    // to decide visibility. Removing it also removes those extra
+                    // round-trips from the initial load.
 
-                        filteredActivities.forEach(activity => {
-                            const responsibleExternalId = activity.responsibles?.[0]?.externalId;
-                            if (responsibleExternalId && userPersonExternalIds.includes(responsibleExternalId)) {
-                                responsibleActivities.push(activity);
-                            } else {
-                                needsSupportCheck.push(activity);
-                            }
-                        });
-
-                        // Phase 2: For non-responsible activities, check supporting technicians via Data API
-                        const supportingActivities = [];
-                        if (needsSupportCheck.length > 0 && userPersonIds.length > 0) {
-                            const chunkSize = 5;
-                            for (let i = 0; i < needsSupportCheck.length; i += chunkSize) {
-                                const chunk = needsSupportCheck.slice(i, i + chunkSize);
-                                const promises = chunk.map(async (activity) => {
-                                    try {
-                                        const techData = await ActivityService.fetchActivityTechnicians(activity.id);
-                                        const supportingIds = techData.supportingPersonIds || [];
-                                        const responsibleIds = techData.responsibleIds || [];
-                                        // Check if any of user's person IDs match supporting or responsible
-                                        const allActivityPersonIds = [...supportingIds, ...responsibleIds];
-                                        const isAssigned = userPersonIds.some(uid => allActivityPersonIds.includes(uid));
-                                        if (isAssigned) {
-                                            supportingActivities.push(activity);
-                                        }
-                                    } catch (e) {
-                                        console.error('Error checking assignment for activity', activity.id, ':', e);
-                                    }
-                                });
-                                await Promise.allSettled(promises);
-                                if (i + chunkSize < needsSupportCheck.length) {
-                                    await new Promise(resolve => setTimeout(resolve, 100));
-                                }
-                            }
-                        }
-
-                        filteredActivities = [...responsibleActivities, ...supportingActivities];
-                    }
-                    
                     // Show info messages about filtering
                     const filteredOutCount = totalVisibleCount - filteredActivities.length;
                     if (filteredOutCount > 0 && filteredActivities.length === 0) {
@@ -488,7 +481,7 @@ sap.ui.define([
                 const responsibleExternalIds = filteredActivities
                     .map(a => a.responsibles?.[0]?.externalId)
                     .filter(id => id && id !== 'N/A');
-                
+
                 if (responsibleExternalIds.length > 0) {
                     const uniqueResponsibleIds = [...new Set(responsibleExternalIds)];
                     await PersonService.preloadPersonsByExternalId(uniqueResponsibleIds);
@@ -514,33 +507,33 @@ sap.ui.define([
                 // Enrich service order data (parallel preloading)
                 if (serviceOrderData) {
                     const preloadPromises = [];
-                    
+
                     if (serviceOrderData.responsibleExternalId && serviceOrderData.responsibleExternalId !== 'N/A') {
                         preloadPromises.push(
                             PersonService.preloadPersonsByExternalId([serviceOrderData.responsibleExternalId])
                         );
                     }
-                    
+
                     if (serviceOrderData.businessPartnerExternalId && serviceOrderData.businessPartnerExternalId !== 'N/A') {
                         preloadPromises.push(
                             BusinessPartnerService.preloadBusinessPartnersByExternalId([serviceOrderData.businessPartnerExternalId])
                         );
                     }
-                    
+
                     // Wait for all preloads to complete
                     if (preloadPromises.length > 0) {
                         await Promise.all(preloadPromises);
                     }
-                    
+
                     // Now set display texts from cache
                     serviceOrderData.responsibleDisplayText = serviceOrderData.responsibleExternalId && serviceOrderData.responsibleExternalId !== 'N/A'
                         ? PersonService.getPersonDisplayTextByExternalId(serviceOrderData.responsibleExternalId)
                         : serviceOrderData.responsibleExternalId;
-                    
+
                     serviceOrderData.businessPartnerDisplayText = serviceOrderData.businessPartnerExternalId && serviceOrderData.businessPartnerExternalId !== 'N/A'
                         ? BusinessPartnerService.getBusinessPartnerDisplayTextByExternalId(serviceOrderData.businessPartnerExternalId)
                         : serviceOrderData.businessPartnerExternalId;
-                    
+
                     viewModel.setProperty("/serviceCall", serviceOrderData);
                 }
 
@@ -581,6 +574,7 @@ sap.ui.define([
             UdfMetaService.clearCache();
             TechnicianService.clearCache();
             OrganizationService.clearCache();
+            UserSettingsService.clearCache();
         },
 
         /* =========================================================================
@@ -663,6 +657,11 @@ sap.ui.define([
         /**
          * Batch load supporting technicians for all activities.
          * Fetches each activity individually via Data API (composite-tree doesn't include supportingPersons).
+         *
+         * NOTE: This is DISPLAY ONLY (the "Technicians" field on the activity panel
+         * and the technician pool in the T&M creation dialog). It does not affect
+         * which activities are visible.
+         *
          * @param {Array} productGroups - Product groups with activities
          * @private
          */

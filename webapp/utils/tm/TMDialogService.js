@@ -1,20 +1,27 @@
 /**
  * TMDialogService.js
- * 
+ *
  * Frontend service for managing T&M dialogs.
  * Handles opening, closing, and data preparation for T&M dialogs.
- * 
+ *
  * Key Features:
  * - Open T&M Reports Dialog (view existing reports)
  * - Open T&M Creation Dialog (create new entries)
  * - Initialize services and load lookup data
  * - Set default values from activity context
  * - Extract activity data from various sources
- * 
+ *
  * Dialogs Managed:
  * - TMReportsDialog: View existing T&M reports
  * - TMCreateDialog: Create new T&M entries
- * 
+ *
+ * DEFAULT ENTRY DATE
+ *   /defaultDate in the createTM model is the single source every new row uses
+ *   - time (AZ/FZ/WZ), material, expense and mileage all read it when a row is
+ *   added. It used to be the activity's planned start date; it is now whatever
+ *   the user's ENTRY_DATE setting says (Dispo date = planned start, Current
+ *   date = today). UserSettingsService owns that decision; this file only asks.
+ *
  * @file TMDialogService.js
  * @module com/tns/fsm/timematerialext/app/utils/tm/TMDialogService
  * @requires sap/ui/core/Fragment
@@ -25,6 +32,7 @@
  * @requires com/tns/fsm/timematerialext/app/utils/services/TimeTaskService
  * @requires com/tns/fsm/timematerialext/app/utils/services/ItemService
  * @requires com/tns/fsm/timematerialext/app/utils/services/ExpenseTypeService
+ * @requires com/tns/fsm/timematerialext/app/utils/services/UserSettingsService
  */
 sap.ui.define([
     "sap/ui/core/Fragment",
@@ -36,8 +44,9 @@ sap.ui.define([
     "com/tns/fsm/timematerialext/app/utils/services/ItemService",
     "com/tns/fsm/timematerialext/app/utils/services/ExpenseTypeService",
     "com/tns/fsm/timematerialext/app/utils/services/ActivityService",
-    "com/tns/fsm/timematerialext/app/utils/services/TypeConfigService"
-], (Fragment, JSONModel, MessageToast, TechnicianService, TMCreationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, TypeConfigService) => {
+    "com/tns/fsm/timematerialext/app/utils/services/TypeConfigService",
+    "com/tns/fsm/timematerialext/app/utils/services/UserSettingsService"
+], (Fragment, JSONModel, MessageToast, TechnicianService, TMCreationService, TimeTaskService, ItemService, ExpenseTypeService, ActivityService, TypeConfigService, UserSettingsService) => {
     "use strict";
 
     return {
@@ -69,6 +78,19 @@ sap.ui.define([
          */
         init(controller) {
             this._controller = controller;
+        },
+
+        /**
+         * Person externalId of the logged-in user, resolved at startup by
+         * DataLoadingMixin._loadOrganizationLevels(). Used to read that user's
+         * own settings record.
+         * @returns {string} externalId, or '' when the user is unresolved
+         * @private
+         */
+        _getPersonExternalId() {
+            const oViewModel = this._controller?.getView?.().getModel("view");
+            const aExternalIds = oViewModel?.getProperty("/webContainerContext/personExternalIds") || [];
+            return aExternalIds.length > 0 ? String(aExternalIds[0]) : "";
         },
 
         /**
@@ -127,10 +149,10 @@ sap.ui.define([
             let defaultTechExternalId = "";
             let activityTechnicians = []; // Dropdown list for activity-specific technicians
             const addedTechnicianIds = new Set(); // Track added IDs to avoid duplicates
-            
+
             try {
                 await TechnicianService.initialize();
-                
+
                 // Step 1: Add responsible from composite-tree data (always available, no extra API call)
                 const responsibleExtId = activityData.responsibleExternalId;
                 if (responsibleExtId && responsibleExtId !== 'N/A') {
@@ -143,7 +165,7 @@ sap.ui.define([
                             isResponsible: true
                         });
                         addedTechnicianIds.add(responsibleTech.id);
-                        
+
                         // Set as default
                         defaultTechId = responsibleTech.id;
                         defaultTechExternalId = responsibleTech.externalId;
@@ -151,11 +173,11 @@ sap.ui.define([
                         TMCreationService.setDefaultTechnician(responsibleTech);
                     }
                 }
-                
+
                 // Step 2: Fetch supportingPersons via API (may fail, but responsible is already added)
                 try {
                     const technicianData = await ActivityService.fetchActivityTechnicians(activityData.activityId);
-                    
+
                     // Add any responsibles from API that weren't already added (edge case)
                     for (const id of technicianData.responsibleIds) {
                         if (!addedTechnicianIds.has(id)) {
@@ -171,7 +193,7 @@ sap.ui.define([
                             }
                         }
                     }
-                    
+
                     // Add supporting persons
                     for (const id of technicianData.supportingPersonIds) {
                         if (!addedTechnicianIds.has(id)) {
@@ -190,7 +212,7 @@ sap.ui.define([
                 } catch (apiError) {
                     // Continue with just the responsible - dropdown will still work
                 }
-                
+
                 // Set default if not already set (edge case: responsible lookup failed but API succeeded)
                 if (!defaultTechId && activityTechnicians.length > 0) {
                     const firstTech = activityTechnicians[0];
@@ -199,7 +221,7 @@ sap.ui.define([
                     defaultTechDisplay = firstTech.displayText;
                     TMCreationService.setDefaultTechnician(firstTech);
                 }
-                
+
             } catch (error) {
                 console.error('TMDialogService: Failed to initialize TechnicianService:', error);
                 MessageToast.show(this._getText("msgWarningTechnicianData"));
@@ -216,10 +238,14 @@ sap.ui.define([
             let defaultItemExternalId = "";
             let expenseTypeSuggestions = [];
 
+            // The user settings ride along in the same parallel batch: they decide
+            // the default entry date below, and after the first open they are
+            // already cached, so this costs nothing on later opens.
             const [timeTasksResult, itemsResult, expenseTypesResult] = await Promise.allSettled([
                 TimeTaskService.fetchTimeTasks(),
                 ItemService.fetchItems(),
-                ExpenseTypeService.fetchExpenseTypes()
+                ExpenseTypeService.fetchExpenseTypes(),
+                UserSettingsService.ensureLoaded(this._getPersonExternalId())
             ]);
 
             // Process Time Tasks result
@@ -236,7 +262,7 @@ sap.ui.define([
             // Process Items result
             if (itemsResult.status === 'fulfilled') {
                 itemSuggestions = ItemService.getAllForSuggestions();
-                
+
                 const serviceProductExtId = activityData.serviceProductExternalId;
                 if (serviceProductExtId && serviceProductExtId !== 'N/A') {
                     const defaultItem = ItemService.getItemSuggestionByExternalId(serviceProductExtId);
@@ -246,7 +272,7 @@ sap.ui.define([
                         defaultItemExternalId = defaultItem.externalId;
                     }
                 }
-                
+
                 TMCreationService.setDefaultItem({
                     id: defaultItemId,
                     externalId: defaultItemExternalId,
@@ -260,17 +286,17 @@ sap.ui.define([
             // Process Expense Types result
             if (expenseTypesResult.status === 'fulfilled') {
                 expenseTypeSuggestions = ExpenseTypeService.getExpenseTypesForDropdown();
-                
+
                 if (expenseTypeSuggestions.length > 0) {
                     // Match ExpenseType code to Activity's Service Product externalId
                     const serviceProductExtId = activityData.serviceProductExternalId;
                     let defaultExpType = expenseTypeSuggestions.find(et => et.code === serviceProductExtId);
-                    
+
                     if (!defaultExpType) {
                         // Fallback to first expense type if no match
                         defaultExpType = expenseTypeSuggestions[0];
                     }
-                    
+
                     TMCreationService.setDefaultExpenseType({
                         id: defaultExpType.key,
                         code: defaultExpType.code,
@@ -295,13 +321,20 @@ sap.ui.define([
                 }
             }
             TMCreationService.setDefaultQuantity(defaultQuantity);
-            
+
             // Calculate remaining material quantity
             const reportedMaterialQty = parseFloat(activityData.tmMaterialQtyReported) || 0;
             const remainingMaterialQty = Math.max(0, plannedMaterialQty - reportedMaterialQty);
 
             // Set activity planned start date for Time Effort entries
             TMCreationService.setActivityPlannedStartDate(activityData.plannedStartDate);
+
+            // Default date for every new row, per the user's ENTRY_DATE setting:
+            //   Dispo date   -> the activity's planned start date (as before)
+            //   Current date -> today, in the company time zone
+            // Falls back to the planned start date whenever the setting is
+            // missing or unreadable, so behaviour is unchanged without settings.
+            const defaultEntryDate = UserSettingsService.resolveEntryDate(activityData.plannedStartDate);
 
             // Get default expense type and mileage type for new entries
             const defaultExpenseType = TMCreationService.getDefaultExpenseType();
@@ -368,8 +401,10 @@ sap.ui.define([
                 defaultItemId: defaultItem?.id || "",
                 defaultItemExternalId: defaultItem?.externalId || "",
                 defaultItemDisplay: defaultItem?.displayText || "",
-                // Default date from activity
-                defaultDate: activityData.plannedStartDate ? activityData.plannedStartDate.split('T')[0] : ""
+                // Default date for new rows - from the user's ENTRY_DATE setting.
+                // EVERY row type reads this one property (time AZ/FZ/WZ, material,
+                // expense, mileage), so this is the only place it is decided.
+                defaultDate: defaultEntryDate
                 // NOTE: maxDate on DatePickers is bound via formatter (.formatter.formatTodayMaxDate),
                 // which returns a fresh Date per evaluation. Do NOT reintroduce a shared todayDate Date
                 // object here — sap.m.DatePicker mutates its maxDate instance, so a shared object drifts
@@ -416,7 +451,7 @@ sap.ui.define([
         closeTMCreationDialog() {
             if (this._controller && this._controller._tmCreateDialog) {
                 this._controller._tmCreateDialog.close();
-                
+
                 const oModel = this._controller._tmCreateDialog.getModel("createTM");
                 if (oModel) {
                     oModel.setProperty("/entries", []);
@@ -428,7 +463,7 @@ sap.ui.define([
                     oModel.setProperty("/timeEntriesWZ", []);
                     oModel.setProperty("/technicianSuggestions", []);
                 }
-                
+
                 TMCreationService.clearDefaultTechnician();
                 TMCreationService.clearDefaultItem();
                 TMCreationService.clearDefaultExpenseType();

@@ -1,0 +1,222 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+>
+    <!--
+        UserSettingsDialog Fragment: the app's user settings, from the FSM UDO
+        'TMExt_UserSettings'.
+
+        TABLE 1 - "Available settings" (always first)
+            One row per field of the UDO DEFINITION (UdoMeta.udfMetas), in FSM's
+            own field order.
+                Setting = the UDF's description
+                Value   = a dropdown of the UDF's selectionKeyValues
+                          (empty cell when the UDF has no selection list)
+            Preselected with what the user saved last time, falling back to
+            the field's default when they have saved nothing yet. The choice is
+            kept in the model as `selectedValue` - that is what OK writes.
+
+        TABLE 2 - the logged-in user's own saved record, when they have one
+            Setting = the UDF's description, Value = the stored value.
+            Records belonging to other people are filtered out in the backend,
+            so they never reach the browser.
+
+        No setting name is hardcoded: whatever the UDO carries in FSM is what
+        gets rendered, so new settings need no app change.
+
+        Replaces the former Type Configuration dialog on this button.
+        TypeConfigDialog.fragment.xml is left in place, unreferenced, in case
+        Expense/Mileage type configuration is needed again.
+
+        Model: userSettings
+    -->
+    <Dialog
+        id="userSettingsDialog"
+        title="{i18n>userSettingsTitle}"
+        contentWidth="42rem"
+        contentHeight="32rem"
+        draggable="true"
+        resizable="true"
+        verticalScrolling="true"
+        busy="{userSettings>/busy}"
+        busyIndicatorDelay="0"
+    >
+        <customHeader>
+            <OverflowToolbar>
+                <core:Icon src="sap-icon://action-settings"/>
+                <ToolbarSpacer width="0.5rem"/>
+                <Title text="{i18n>userSettingsTitle}" level="H4"/>
+                <ToolbarSpacer/>
+                <!-- At most one record (the logged-in user's own), so this is a
+                     saved/not-saved indicator rather than a count. -->
+                <ObjectStatus
+                    text="{i18n>userSettingsSaved}"
+                    state="Success"
+                    icon="sap-icon://accept"
+                    visible="{= ${userSettings>/recordCount} > 0 }"
+                    class="sapUiTinyMarginEnd"/>
+                <Button
+                    icon="sap-icon://refresh"
+                    type="Transparent"
+                    tooltip="{i18n>userSettingsRefreshTooltip}"
+                    press=".onRefreshUserSettings"/>
+            </OverflowToolbar>
+        </customHeader>
+
+        <content>
+            <VBox class="sapUiSmallMargin">
+
+                <!-- Load error -->
+                <MessageStrip
+                    text="{i18n>userSettingsLoadFailed}"
+                    type="Error"
+                    showIcon="true"
+                    class="sapUiSmallMarginBottom"
+                    visible="{userSettings>/hasError}"/>
+
+                <!-- ============================================================
+                     TABLE 1: every possible setting (the UDO definition)
+                     ============================================================ -->
+                <Panel
+                    expandable="true"
+                    expanded="true"
+                    class="sapUiSmallMarginBottom"
+                    visible="{= ${userSettings>/fieldCount} > 0 }">
+                    <headerToolbar>
+                        <OverflowToolbar design="Info">
+                            <core:Icon src="sap-icon://list" class="sapUiTinyMarginEnd"/>
+                            <Title text="{i18n>userSettingsAvailableTitle}" level="H5"/>
+                            <ToolbarSpacer/>
+                            <!-- Free text maintained in FSM on the settings definition.
+                                 Whatever is typed there is what the user reads. -->
+                            <Text text="{userSettings>/definitionDescription}" class="sapUiTinyMarginEnd"/>
+                        </OverflowToolbar>
+                    </headerToolbar>
+                    <content>
+                        <Table
+                            items="{path: 'userSettings>/fields', templateShareable: false}"
+                            mode="None"
+                            noDataText="{i18n>userSettingsNoFields}"
+                            class="sapUiSizeCondensed">
+                            <columns>
+                                <Column width="45%" hAlign="Begin">
+                                    <Text text="{i18n>userSettingsColSetting}"/>
+                                </Column>
+                                <Column hAlign="Begin">
+                                    <Text text="{i18n>userSettingsColValue}"/>
+                                </Column>
+                            </columns>
+                            <items>
+                                <ColumnListItem type="Inactive">
+                                    <cells>
+                                        <Text text="{userSettings>label}" wrapping="true"/>
+                                        <!-- Value cell. Two renderings, one column:
+                                             - SELECTIONLIST field -> dropdown of its options
+                                             - anything else -> the plain value (for a PERSON
+                                               field that is the logged-in user's externalId);
+                                               blank when there is nothing to show.
+                                             Free-text editing arrives with the PATCH.
+
+                                             VBox, not HBox: a flex ROW child ignores
+                                             width="100%" and collapses the Select to just its
+                                             arrow. A VBox stretches its children by default. -->
+                                        <VBox width="100%">
+                                            <Select
+                                                items="{path: 'userSettings>options', templateShareable: false}"
+                                                selectedKey="{userSettings>selectedValue}"
+                                                forceSelection="false"
+                                                width="100%"
+                                                visible="{= ${userSettings>options}.length > 0 }">
+                                                <core:Item key="{userSettings>key}" text="{userSettings>text}"/>
+                                            </Select>
+                                            <!-- displayValue, not selectedValue: for a person
+                                                 field the table shows "firstName lastName"
+                                                 while selectedValue keeps the externalId that
+                                                 the PATCH will write. -->
+                                            <Text
+                                                text="{userSettings>displayValue}"
+                                                wrapping="true"
+                                                visible="{= ${userSettings>options}.length === 0 }"/>
+                                        </VBox>
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
+                        </Table>
+                    </content>
+                </Panel>
+
+                <!-- Empty state: no stored records (or none readable) -->
+                <IllustratedMessage
+                    illustrationType="sapIllus-NoEntries"
+                    title="{i18n>userSettingsEmptyTitle}"
+                    description="{userSettings>/emptyDescription}"
+                    visible="{= ${userSettings>/recordCount} === 0 &amp;&amp; ${userSettings>/hasError} !== true &amp;&amp; ${userSettings>/busy} !== true }"/>
+
+                <!-- ============================================================
+                     The logged-in user's own saved record (at most one).
+                     Other people's records are filtered out server-side.
+                     ============================================================ -->
+                <List
+                    items="{path: 'userSettings>/records', templateShareable: false}"
+                    mode="None"
+                    showSeparators="None"
+                    visible="{= ${userSettings>/recordCount} > 0 }">
+                    <CustomListItem type="Inactive">
+                        <Panel expandable="true" expanded="true" class="sapUiTinyMarginBottom">
+                            <headerToolbar>
+                                <OverflowToolbar design="Info">
+                                    <core:Icon src="sap-icon://settings" class="sapUiTinyMarginEnd"/>
+                                    <Title text="{userSettings>title}" level="H5"/>
+                                    <ToolbarSpacer/>
+                                </OverflowToolbar>
+                            </headerToolbar>
+                            <content>
+                                <Table
+                                    items="{path: 'userSettings>settings', templateShareable: false}"
+                                    mode="None"
+                                    noDataText="{i18n>userSettingsNoValues}"
+                                    class="sapUiSizeCondensed">
+                                    <columns>
+                                        <Column width="45%" hAlign="Begin">
+                                            <Text text="{i18n>userSettingsColSetting}"/>
+                                        </Column>
+                                        <Column hAlign="Begin">
+                                            <Text text="{i18n>userSettingsColValue}"/>
+                                        </Column>
+                                    </columns>
+                                    <items>
+                                        <ColumnListItem type="Inactive">
+                                            <cells>
+                                                <Text text="{userSettings>label}" wrapping="true"/>
+                                                <!-- displayValue: a selection value is stored
+                                                     as its code ("1"), so the backend resolves
+                                                     it back to its text ("Current date"). -->
+                                                <Text text="{userSettings>displayValue}" wrapping="true"/>
+                                            </cells>
+                                        </ColumnListItem>
+                                    </items>
+                                </Table>
+                            </content>
+                        </Panel>
+                    </CustomListItem>
+                </List>
+
+            </VBox>
+        </content>
+
+        <!-- SAP footer convention: the primary action on the left (begin), the
+             closing action on the right (end). OK writes the record for the
+             logged-in user - creating it, or updating the one that already
+             holds this person's externalId. -->
+        <beginButton>
+            <Button
+                text="{i18n>userSettingsOk}"
+                type="Emphasized"
+                press=".onSaveUserSetting"
+                enabled="{= ${userSettings>/fieldCount} > 0 }"/>
+        </beginButton>
+        <endButton>
+            <Button text="{i18n>userSettingsClose}" press=".onCloseUserSettings"/>
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

@@ -1,14 +1,14 @@
 /**
  * FSMLookupService.js
- * 
+ *
  * Lookup and reference data methods for FSM API integration.
  * Provides data fetching for reference tables, approval status,
  * person/technician data, organization hierarchy, and user management.
- * 
+ *
  * These methods are mixed into the FSMService class prototype at startup,
  * so they have access to FSMService's instance properties and HTTP methods via `this`.
  * Destination names are defined centrally in FSMService constructor.
- * 
+ *
  * Sections:
  * - LOOKUP DATA: TimeTasks, Items, ExpenseTypes, UdfMeta
  * - APPROVAL STATUS: Decision status for T&M entries
@@ -17,7 +17,7 @@
  * - USER: User API lookup, combined user-org-level flow
  *   (with UnifiedPerson fallback for accounts where Person.userName
  *    stores the login name instead of the User API id)
- * 
+ *
  * @file FSMLookupService.js
  * @module utils/FSMLookupService
  * @requires ./DestinationService (via FSMService `this` context)
@@ -27,6 +27,47 @@
 const axios = require('axios');
 const DestinationService = require('./DestinationService');
 const TokenCache = require('./TokenCache');
+
+/**
+ * Build the identity list returned by both person lookup paths.
+ *
+ * One human can have several Person rows for the same userName (EMPLOYEE +
+ * ERPUSER), each with its own id/externalId. All are kept, in the order FSM
+ * returned them; callers use the first.
+ *
+ * displayName is "firstName lastName" - a single space between, and no stray
+ * space when only one of the two is filled. It falls back to the externalId so
+ * the UI always has something to show.
+ *
+ * @param {Array<Object>} rows - raw Person / UnifiedPerson rows
+ * @returns {Array<{id: string, externalId: string, firstName: string, lastName: string, displayName: string}>}
+ */
+function buildPersonIdentities(rows) {
+    const seen = new Set();
+    const persons = [];
+
+    rows.forEach(row => {
+        if (!row || !row.id || seen.has(row.id)) return;
+        seen.add(row.id);
+
+        const firstName = row.firstName || '';
+        const lastName = row.lastName || '';
+        const displayName = [firstName, lastName]
+            .map(part => String(part).trim())
+            .filter(Boolean)
+            .join(' ');
+
+        persons.push({
+            id: row.id,
+            externalId: row.externalId || null,
+            firstName: firstName,
+            lastName: lastName,
+            displayName: displayName || row.externalId || ''
+        });
+    });
+
+    return persons;
+}
 
 module.exports = {
 
@@ -70,7 +111,7 @@ module.exports = {
      *
      * FSM's Item master contains records where `tool` is NULL rather than
      * false (measured in P: 74 of 133 items).
-     * 
+     *
      * Note: `NOT LIKE 'Z11%'` also drops rows with a NULL externalId (same
      * three-valued-logic behaviour). This is intentional — only S/4-replicated
      * items carry an externalId, and an item without one cannot serve as a
@@ -80,8 +121,8 @@ module.exports = {
      */
     async getItems() {
         try {
-            const query = `SELECT DISTINCT w.name, w.externalId, w.id 
-                           FROM Item w 
+            const query = `SELECT DISTINCT w.name, w.externalId, w.id
+                           FROM Item w
                            WHERE (w.tool = false OR w.tool IS NULL)
                            AND w.externalId NOT LIKE 'Z11%'`;
 
@@ -471,15 +512,13 @@ module.exports = {
     /**
      * Get Person's orgLevel + identity by user ID.
      *
-     * Selects id/externalId in addition to orgLevel so the activity
-     * assignment filter (responsible / supporting technician) can compare
-     * the user's person identity against each activity. Without these the
-     * assignment filter is skipped and all org-matched activities show.
+     * Selects id/externalId in addition to orgLevel so the app has the user's
+     * person identity - notably personExternalIds, which the T&M Journal user
+     * settings use to fill PERSON fields.
      *
      * The same human can have multiple Person rows for one userName
-     * (e.g. EMPLOYEE + ERPUSER), each with its own id/externalId. An activity
-     * may be assigned against either row, so ALL identities are collected and
-     * returned as arrays; the assignment filter matches on any of them.
+     * (e.g. EMPLOYEE + ERPUSER), each with its own id/externalId. ALL identities
+     * are collected and returned as arrays; callers use the first.
      *
      * @param {string} userId - User ID from User API
      * @returns {Promise<Object|null>} Object with orgLevel, orgLevelIds, personIds[], personExternalIds[]
@@ -488,7 +527,10 @@ module.exports = {
         try {
             if (!userId) return null;
 
-            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds FROM Person w WHERE w.userName = '${userId}'`;
+            // firstName/lastName are selected for display only - the app shows
+            // "firstName lastName" in the User Settings table while keeping
+            // externalId for the PATCH.
+            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM Person w WHERE w.userName = '${userId}'`;
             const data = await this.makeQueryRequest(query, 'Person.25');
 
             if (!data.data || data.data.length === 0) {
@@ -500,6 +542,7 @@ module.exports = {
 
             const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
             const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
+            const persons = buildPersonIdentities(rows);
 
             // orgLevel is shared across the duplicate rows; take the first
             // populated one rather than assuming row 0 carries it.
@@ -509,7 +552,8 @@ module.exports = {
                 orgLevel: orgLevelRow.orgLevel || null,
                 orgLevelIds: orgLevelRow.orgLevelIds || null,
                 personIds,
-                personExternalIds
+                personExternalIds,
+                persons
             };
 
         } catch (error) {
@@ -528,7 +572,7 @@ module.exports = {
      * the raw context value resolves the same person and returns the same
      * orgLevel + identity fields.
      *
-     * Selects id/externalId here too so the assignment filter works on the
+     * Selects id/externalId here too so the app has the person identity on the
      * fallback path as well, not only the primary path.
      *
      * @param {string} contextUserValue - User value exactly as delivered by FSM context
@@ -538,7 +582,8 @@ module.exports = {
         try {
             if (!contextUserValue) return null;
 
-            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds FROM UnifiedPerson w WHERE w.userName = '${contextUserValue}'`;
+            // firstName/lastName selected for display, same as the primary path.
+            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM UnifiedPerson w WHERE w.userName = '${contextUserValue}'`;
             const data = await this.makeQueryRequest(query, 'UnifiedPerson.13');
 
             if (!data.data || data.data.length === 0) {
@@ -546,18 +591,20 @@ module.exports = {
             }
 
             // Collect every identity row (EMPLOYEE + ERPUSER etc.), same as the
-            // primary Person path, so the assignment filter can match on any.
+            // primary Person path.
             const rows = data.data.map(r => r.w).filter(Boolean);
 
             const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
             const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
+            const persons = buildPersonIdentities(rows);
             const orgLevelRow = rows.find(r => r.orgLevel) || rows[0];
 
             return {
                 orgLevel: orgLevelRow.orgLevel || null,
                 orgLevelIds: orgLevelRow.orgLevelIds || null,
                 personIds,
-                personExternalIds
+                personExternalIds,
+                persons
             };
 
         } catch (error) {
@@ -580,9 +627,8 @@ module.exports = {
      *    Covers accounts where Person.userName stores the login name
      *    instead of the User API id (environment data discrepancy).
      *
-     * personIds / personExternalIds are returned as arrays so the activity
-     * assignment filter can match the user against each activity's
-     * responsible / supporting technicians.
+     * personIds / personExternalIds are returned as arrays. personExternalIds[0]
+     * is what the frontend puts into PERSON fields of the user settings.
      *
      * @param {string} username - User value from FSM context (login name or id)
      * @returns {Promise<Object|null>} Object with orgLevel info + person identity, or null if unresolvable
@@ -626,6 +672,9 @@ module.exports = {
 
             console.log(`FSMService: User org level resolved via ${resolvedVia} for '${username}'`);
 
+            const persons = orgLevelData.persons || [];
+            const primary = persons[0] || null;
+
             return {
                 userId: user?.id || username,
                 userName: username,
@@ -634,7 +683,11 @@ module.exports = {
                 orgLevel: orgLevelData.orgLevel,
                 orgLevelIds: orgLevelData.orgLevelIds,
                 personIds: orgLevelData.personIds || [],
-                personExternalIds: orgLevelData.personExternalIds || []
+                personExternalIds: orgLevelData.personExternalIds || [],
+                // Full identity rows: id, externalId, firstName, lastName, displayName.
+                // The UI shows displayName; externalId is what a PATCH writes.
+                persons: persons,
+                personDisplayName: primary?.displayName || null
             };
 
         } catch (error) {

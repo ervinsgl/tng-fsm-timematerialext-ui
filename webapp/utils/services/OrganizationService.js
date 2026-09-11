@@ -1,22 +1,32 @@
 /**
  * OrganizationService.js
- * 
+ *
  * Frontend service for organization level management.
  * Handles caching of org hierarchy and user org level resolution.
- * 
+ *
  * Key Features:
  * - Caches full organizational hierarchy from FSM
- * - Formats org level IDs (raw â†’ UUID format)
+ * - Formats org level IDs (raw -> UUID format)
  * - Resolves user's org level from username
  * - Provides lookup methods for org level names
- * 
+ *
  * Flow for User Org Level Resolution:
  * 1. getUserResolvedOrgLevel(username)
- * 2. â†’ fetchUserOrgLevel() calls /api/get-user-org-level
- * 3. â†’ Backend: User API (get user ID) â†’ Query API (get orgLevel)
- * 4. â†’ findMatchingOrgLevel() matches against cached hierarchy
- * 5. â†’ Returns resolved org level with id, name, etc.
- * 
+ * 2. -> fetchUserOrgLevel() calls /api/v1/get-user-org-level
+ * 3. -> Backend: User API (get user ID) -> Query API (get orgLevel + identity)
+ * 4. -> findMatchingOrgLevel() matches against cached hierarchy
+ * 5. -> Returns resolved org level with id, name, etc.
+ *
+ * The resolved object also carries the user's PERSON IDENTITY, passed straight
+ * through from the backend:
+ *   personIds[]         - Person ids
+ *   personExternalIds[] - Person externalIds (what a PATCH writes)
+ *   persons[]           - { id, externalId, firstName, lastName, displayName }
+ *   personDisplayName   - "firstName lastName" of the first identity (what the
+ *                         User Settings table displays)
+ * These are returned on BOTH the found and not-found paths, because the person
+ * identity is independent of whether the org level matched the hierarchy.
+ *
  * @file OrganizationService.js
  * @module com/tns/fsm/timematerialext/app/utils/services/OrganizationService
  */
@@ -30,7 +40,7 @@ sap.ui.define([], () => {
          * @private
          */
         _orgLevelCache: new Map(),
-        
+
         /**
          * Flag indicating if hierarchy has been loaded
          * @type {boolean}
@@ -45,15 +55,15 @@ sap.ui.define([], () => {
          */
         formatOrgLevelId(orgLevelId) {
             if (!orgLevelId) return null;
-            
+
             // Remove any existing hyphens and convert to lowercase
             const cleaned = orgLevelId.replace(/-/g, '').toLowerCase();
-            
+
             // Add hyphens in UUID format: 8-4-4-4-12
             if (cleaned.length === 32) {
                 return `${cleaned.substring(0, 8)}-${cleaned.substring(8, 12)}-${cleaned.substring(12, 16)}-${cleaned.substring(16, 20)}-${cleaned.substring(20, 32)}`;
             }
-            
+
             return orgLevelId; // Return as-is if not 32 characters
         },
 
@@ -76,7 +86,7 @@ sap.ui.define([], () => {
                 }
 
                 const data = await response.json();
-                
+
                 // Recursively process all levels and sublevels
                 if (data.level && data.level.subLevels) {
                     this._processLevelsRecursive(data.level.subLevels);
@@ -220,6 +230,23 @@ sap.ui.define([], () => {
         },
 
         /**
+         * Person identity fields, passed through unchanged from the backend.
+         * Extracted once so the found and not-found paths cannot drift apart.
+         * @param {Object} userOrgData - payload from /api/v1/get-user-org-level
+         * @returns {Object} identity fields
+         * @private
+         */
+        _extractPersonIdentity(userOrgData) {
+            const persons = userOrgData.persons || [];
+            return {
+                personIds: userOrgData.personIds || [],
+                personExternalIds: userOrgData.personExternalIds || [],
+                persons: persons,
+                personDisplayName: userOrgData.personDisplayName || persons[0]?.displayName || null
+            };
+        },
+
+        /**
          * Get user's resolved organization level
          * Combines fetching user org level and matching against hierarchy
          * @param {string} username - Username from FSM Mobile context
@@ -238,13 +265,14 @@ sap.ui.define([], () => {
                     return null;
                 }
 
+                const identity = this._extractPersonIdentity(userOrgData);
+
                 // Find matching org level in hierarchy
                 const matched = this.findMatchingOrgLevel(userOrgData.orgLevel, userOrgData.orgLevelIds);
                 if (!matched) {
                     return {
                         found: false,
-                        personIds: userOrgData.personIds,
-                        personExternalIds: userOrgData.personExternalIds,
+                        ...identity,
                         userOrgData: userOrgData,
                         message: 'Organization level not found in hierarchy'
                     };
@@ -259,8 +287,7 @@ sap.ui.define([], () => {
                     matchedBy: matched.matchedBy,
                     originalId: matched.originalId,
                     formattedId: matched.formattedId,
-                    personIds: userOrgData.personIds,
-                    personExternalIds: userOrgData.personExternalIds,
+                    ...identity,
                     userOrgData: userOrgData
                 };
 

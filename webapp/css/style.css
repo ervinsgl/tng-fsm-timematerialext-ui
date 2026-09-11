@@ -1,26 +1,26 @@
 /* ========================================
    Mobile App SC - Service Confirmation App
    ========================================
-   
+
    SAP UI5 Fiori Application for FSM Mobile
-   
+
    Architecture:
    - Frontend: SAP UI5 (OpenUI5) with XML Views
    - Backend: Node.js/Express REST API
    - External: SAP FSM APIs
-   
+
    Key Features:
    - Web Container integration (FSM Mobile context)
    - User Organization Level auto-resolution
    - Activity filtering by user's org level
    - T&M (Time & Materials) reporting
-   
+
    CSS Structure:
    - Session Context Panel (header with org level + user)
    - Service Order Panel (service call details)
    - Product Groups (activities grouped by product)
    - T&M Entry styling (dialogs, forms, inputs)
-   
+
    ======================================== */
 
 /* ========================================
@@ -53,6 +53,21 @@
 /* Labels */
 .sapMLabel {
     font-size: 0.75rem !important;
+}
+
+/* T&M summary colours (Material / Arbeitszeit / Fahrzeit / Wartezeit).
+   State is computed in TMDataService.resolveSummaryState() and bound as
+   customData, because `class` cannot be bound in XML views.
+   The ObjectNumber takes red/orange/green from its own state="..."; these rules
+   colour the labels, and handle grey (None) for label + number. */
+.sapMLabel[data-tmstate="Error"]   { color: var(--sapNegativeTextColor, #bb0000) !important; }
+.sapMLabel[data-tmstate="Warning"] { color: var(--sapCriticalTextColor, #e76500) !important; }
+.sapMLabel[data-tmstate="Success"] { color: var(--sapPositiveTextColor, #256f3a) !important; }
+.sapMLabel[data-tmstate="None"]    { color: var(--sapContent_LabelColor, #6a6d70) !important; }
+
+[data-tmstate="None"] .sapMObjectNumberText,
+[data-tmstate="None"] .sapMObjectNumberUnit {
+    color: var(--sapContent_LabelColor, #6a6d70) !important;
 }
 
 /* Text elements */
@@ -220,17 +235,56 @@
     line-height: 1.3;
 }
 
-/* Activity Header Subject - wrapping title in header */
+/* ----------------------------------------------------------------------
+   Activity Header Subject
+   ----------------------------------------------------------------------
+   The custom class sits ON the sap.m.Title element itself, not on a parent,
+   so the previous `.activityHeaderSubject .sapMTitleStyleH5` descendant rule
+   matched nothing. The title was therefore left to the responsive rules
+   further down, which force `white-space: normal !important` below 1024px -
+   that is what turned a long subject into a tall tower and pushed the T&M
+   summary out of view.
+
+   Now, the collapsed header sheds content in three tiers as it narrows:
+     > 600px    ID + subject (clamped to two lines, the tooltip on the Title
+                carries the full text) + T&M summary
+     <= 600px   the subject is hidden here and .activityDetailSubject shows it
+                in the expanded detail instead, so it is never lost; the summary
+                LABELS also go, leaving ID + bare numbers
+     <= 400px   the summary goes too (.activityHeaderSummary), leaving just the
+                ID - below this width the numbers were being clipped mid-word
+                and squeezing the ID into an ellipsis. The full summary is one
+                tap away in the expanded panel.
+
+   The .activityEntryPanel prefix raises specificity above the
+   `.activityEntryPanel .sapMTitle { white-space: normal !important }` rules in
+   the media queries, so this wins regardless of source order.
+   -------------------------------------------------------------------- */
 .activityHeaderSubject {
     flex: 1 1 auto;
     min-width: 0;
 }
 
-.activityHeaderSubject .sapMTitleStyleH5 {
-    white-space: nowrap;
+.activityEntryPanel .activityHeaderToolbar .activityHeaderSubject {
+    display: -webkit-box !important;
+    -webkit-box-orient: vertical;
+    /* -webkit-line-clamp is what every engine this app runs in actually uses.
+       line-clamp is the standardised property; it is listed second so a browser
+       that supports it wins, and it silences the "define the standard property"
+       linter warning. Harmless where unsupported - an unknown property is
+       simply ignored. */
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
+    /* line-clamp needs wrapping to be allowed before it can cut at two lines */
+    white-space: normal !important;
+    overflow-wrap: anywhere;
     line-height: 1.3;
+}
+
+/* The detail copy is redundant while the header still shows the subject. */
+.activityDetailSubject {
+    display: none !important;
 }
 
 /* Activity Header ID - same styling as subject */
@@ -474,7 +528,7 @@
 
 /* ========== MOBILE FIRST (< 600px) ========== */
 @media (max-width: 600px) {
-    
+
     /* ----- PREVENT HORIZONTAL SCROLL ----- */
     .sapMDialog,
     .sapMDialogSection,
@@ -483,7 +537,7 @@
     .activityEntryPanel {
         overflow-x: hidden !important;
     }
-    
+
     /* ----- DIALOG ADJUSTMENTS ----- */
     .sapMDialog {
         width: 100% !important;
@@ -491,17 +545,17 @@
         margin: 0 !important;
         border-radius: 0 !important;
     }
-    
+
     .sapMDialogScroll {
         padding: 0.5rem !important;
     }
-    
+
     /* ----- PANEL HEADERS ----- */
     .productGroupPanel .sapMPanelHdr,
     .activityEntryPanel .sapMPanelHdr {
         padding: 0.5rem !important;
     }
-    
+
     /* Allow title text to wrap on mobile */
     .productGroupPanel .sapMTitle,
     .activityEntryPanel .sapMTitle,
@@ -510,13 +564,45 @@
         line-height: 1.3 !important;
         font-size: 0.875rem !important;
     }
-    
+
+    /* ----- ACTIVITY HEADER SUBJECT -----
+       Below 600px the collapsed header only has room for the ID and the T&M
+       numbers (the summary LABELS are already hidden by the rule below), so
+       the subject moves into the expanded detail. Change this query and the
+       clamp rule further up together if 600px is not the right switch-over. */
+    .activityEntryPanel .activityHeaderToolbar .activityHeaderSubject {
+        display: none !important;
+    }
+
+    .activityDetailSubject {
+        display: block !important;
+        width: 100% !important;
+        /* Centred, and padded to the same gutter the field rows below use, so
+           the subject sits inside the panel content instead of running flush to
+           its left border the way it did as a plain block. */
+        text-align: center !important;
+        padding: 0 1rem !important;
+        box-sizing: border-box !important;
+        white-space: normal !important;
+        line-height: 1.3 !important;
+        overflow-wrap: anywhere;
+    }
+
+    /* sap.m.Title puts the text in an inner span; without this the span keeps
+       the default left alignment and the rule above has no visible effect. */
+    .activityDetailSubject .sapMTitleInner,
+    .activityDetailSubject > span {
+        display: block;
+        width: 100%;
+        text-align: center;
+    }
+
     /* Hide ID labels on mobile in headers */
     .productGroupPanel .sapMOTB > .sapMLabel,
     .activityEntryPanel .sapMOTB > .sapMLabel {
         display: none !important;
     }
-    
+
     /* ----- INFO BAR ON MOBILE ----- */
     /* Info bar toolbar - wrap content */
     .activityEntryPanel .sapMTB.sapMTBInfo,
@@ -525,14 +611,14 @@
         min-height: auto;
         padding: 0.5rem;
     }
-    
+
     /* Info bar title - allow wrapping */
     .activityEntryPanel .sapMTB.sapMTBInfo .sapMTitle,
     .sapMDialog .sapMTB.sapMTBInfo .sapMTitle {
         white-space: normal !important;
         line-height: 1.3;
     }
-    
+
     /* ----- COLUMN LAYOUTS ----- */
     /* Force single column on mobile */
     .activityEntryContent,
@@ -544,7 +630,7 @@
         width: 100% !important;
         max-width: 100% !important;
     }
-    
+
     .activityColumn,
     .serviceOrderColumn {
         border-right: none !important;
@@ -553,14 +639,14 @@
         padding-right: 0 !important;
         margin-bottom: 0.5rem;
     }
-    
+
     .activityColumn:last-child,
     .serviceOrderColumn:last-child {
         border-bottom: none;
         padding-bottom: 0;
         margin-bottom: 0;
     }
-    
+
     /* ----- FIELD ROWS - KEEP LABEL AND VALUE INLINE ----- */
     .activityFieldRow,
     .serviceOrderFieldRow {
@@ -568,7 +654,7 @@
         width: 100% !important;
         align-items: center !important;
     }
-    
+
     /* Labels - fixed width, stay inline */
     .activityFieldLabel,
     .serviceOrderFieldLabel {
@@ -578,7 +664,7 @@
         margin-right: 0.5rem !important;
         font-size: 0.75rem !important;
     }
-    
+
     /* Values - take remaining space */
     .activityFieldValue,
     .serviceOrderFieldValue {
@@ -586,37 +672,37 @@
         min-width: 0 !important;
         word-break: break-word !important;
     }
-    
+
     /* ----- TOOLBAR BUTTONS ----- */
     .sapMOTB .sapMBtn {
         min-width: auto !important;
         padding: 0 0.5rem !important;
     }
-    
+
     /* ----- MARGINS & PADDING ----- */
     .sapUiMediumMargin {
         margin: 0.5rem !important;
     }
-    
+
     .sapUiSmallMargin {
         margin: 0.25rem !important;
     }
-    
+
     /* ----- PANEL CONTENT ----- */
     .productGroupPanel,
     .serviceOrderPanel {
         margin: 0.25rem 0 !important;
     }
-    
+
     .activityListItem {
         padding: 0.125rem 0 !important;
     }
-    
+
     /* ----- OBJECT STATUS ----- */
     .sapMObjectStatus {
         font-size: 0.75rem !important;
     }
-    
+
     /* ----- DIALOG HEADER ----- */
     .sapMDialogTitle {
         font-size: 1rem !important;
@@ -631,11 +717,37 @@
     .sapMDialog .sapMDialogSubHeader .sapMLabel {
         display: none !important;
     }
+
+    /* ----- COLLAPSED ACTIVITY HEADER: DROP THE T&M SUMMARY -----
+       Third and last tier of the header (see the Activity Header Subject
+       block further up). The subject is already gone at 600px and the summary
+       labels with it; at this width the bare numbers no longer fit either -
+       they were being cut off mid-word ("1.02 Sto") and pushing the activity
+       ID into an ellipsis. Only the ID stays; the summary is still there in
+       full once the panel is expanded.
+
+       One class covers the labels, the numbers and the "/" separator - see
+       activityHeaderSummary in ProductGroups.fragment.xml. */
+    .activityEntryPanel .activityHeaderToolbar .activityHeaderSummary {
+        display: none !important;
+    }
+
+    /* With the summary gone the ID has the row to itself, so let it use the
+       full width instead of keeping the truncation it needed before. */
+    .activityEntryPanel .activityHeaderToolbar .activityHeaderId {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
 }
 
 /* ========== TABLET (600px - 1024px) ========== */
 @media (min-width: 601px) and (max-width: 1024px) {
-    
+
     /* ----- PREVENT HORIZONTAL SCROLL ----- */
     .sapMDialog,
     .sapMDialogSection,
@@ -643,27 +755,27 @@
     .sapMPanelContent {
         overflow-x: hidden !important;
     }
-    
+
     /* ----- DIALOG ADJUSTMENTS ----- */
     .sapMDialog {
         width: 95% !important;
         max-width: 95% !important;
     }
-    
+
     /* ----- PANEL HEADERS ----- */
     .productGroupPanel .sapMTitle,
     .activityEntryPanel .sapMTitle {
         font-size: 0.9rem !important;
         white-space: normal !important;
     }
-    
+
     /* ----- COLUMN LAYOUTS ----- */
     /* Grid auto-fit handles column count automatically */
     .activityEntryContent,
     .serviceOrderContent {
         gap: 1rem !important;
     }
-    
+
     /* ----- FIELD ROWS - KEEP LABEL AND VALUE INLINE ----- */
     .activityFieldRow,
     .serviceOrderFieldRow {
@@ -696,7 +808,7 @@
     .sapMSlt {
         min-height: 44px !important;
     }
-    
+
     .sapMListItem {
         min-height: 48px !important;
     }

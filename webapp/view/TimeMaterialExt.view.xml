@@ -5,15 +5,20 @@
     xmlns:core="sap.ui.core"
     xmlns:layout="sap.ui.layout"
 >
-    <!-- 
-        View1: Main view for FSM Service Confirmation application.
-        
+    <!--
+        TimeMaterialExt: Main view for FSM Service Confirmation application.
+
         Layout Structure:
         1. Service Order Panel (service call header details)
         2. Product Groups (activities grouped by product)
-        
+
         Session context available via footer info button (ℹ️).
-        Controller: com.tns.fsm.timematerialext.app.controller.View1
+        The footer settings button opens USER SETTINGS (FSM UDO
+        'TMExt_UserSettings'). It used to open the Type Configuration dialog
+        (press=".onOpenTypeConfig", text="{i18n>view1TypeConfig}") - those
+        handlers are commented out in the controller and can be restored there.
+
+        Controller: com.tns.fsm.timematerialext.app.controller.TimeMaterialExt
     -->
     <Page
         id="mobileAppServiceConfirmationPage"
@@ -31,7 +36,7 @@
         </customHeader>
         <content>
             <layout:VerticalLayout id="mobileAppMainLayout" width="100%" class="sapUiContentPadding">
-                
+
                 <!-- Service Order Header -->
                 <core:Fragment fragmentName="com.tns.fsm.timematerialext.app.view.fragments.ServiceCall" type="XML"/>
 
@@ -42,30 +47,32 @@
                         <BusyIndicator size="2rem" class="sapUiSmallMarginBottom"/>
                         <Text text="{i18n>view1LoadingActivities}" class="sapUiTinyMarginTop"/>
                     </VBox>
-                    
+
                     <!-- Content -->
                     <VBox visible="{= !${view>/activitiesLoading} }">
                         <core:Fragment fragmentName="com.tns.fsm.timematerialext.app.view.fragments.ProductGroups" type="XML"/>
                     </VBox>
                 </VBox>
-                
+
             </layout:VerticalLayout>
         </content>
 
         <!-- Footer -->
         <footer>
             <OverflowToolbar id="mobileAppFooterToolbar">
-                <Button 
-                    id="mobileAppTypeConfigButton" 
-                    icon="sap-icon://action-settings" 
-                    text="{i18n>view1TypeConfig}" 
-                    press=".onOpenTypeConfig"
-                    tooltip="{i18n>view1TypeConfigTooltip}"
+                <!-- Settings button: opens User Settings (was Type Configuration).
+                     The control id is unchanged so existing CSS keeps matching. -->
+                <Button
+                    id="mobileAppTypeConfigButton"
+                    icon="sap-icon://action-settings"
+                    text="{i18n>view1UserSettings}"
+                    press=".onOpenUserSettings"
+                    tooltip="{i18n>view1UserSettingsTooltip}"
                 />
-                <Button 
-                    id="mobileAppContextInfoButton" 
-                    icon="sap-icon://hint" 
-                    text="{i18n>view1ContextInfo}" 
+                <Button
+                    id="mobileAppContextInfoButton"
+                    icon="sap-icon://hint"
+                    text="{i18n>view1ContextInfo}"
                     press=".onShowContextInfo"
                     tooltip="{i18n>view1ContextInfoTooltip}"
                 />
