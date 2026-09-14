@@ -1,22 +1,34 @@
 /**
  * TechnicianService.js
- * 
+ *
  * Frontend service for technician selection in T&M entries.
  * Provides optimized search functionality for large person datasets (4000+).
- * 
+ *
  * Key Features:
  * - Lazy loading of all persons on first use
  * - Pre-computed search text for fast filtering
  * - Result limiting for UI performance (max 50 results)
  * - Integration with PersonService for data loading
- * 
+ *
  * Display Format: "John Doe"
- * 
+ *
+ * ONE ENTRY PER HUMAN, FINDABLE UNDER ANY IDENTITY
+ *   FSM stores one Person row per type for the same human (ERPUSER + EMPLOYEE),
+ *   each with its own id and its own externalId. The backend merges them so the
+ *   picker lists a technician once instead of twice - listing both would let a
+ *   user create entries under an identity FSM's own apps never use.
+ *
+ *   The merged entry keeps every identity in `ids` / `externalIds`, and the
+ *   lookups below match against those, not just the surviving row's own values.
+ *   That matters: an activity's `responsible` / `supportingPersons` may name
+ *   the collapsed identity, and without alias matching those technicians would
+ *   silently disappear from the creation dialog.
+ *
  * Optimization Strategy:
  * - Builds flat array from PersonService cache for faster iteration
  * - Pre-computes lowercase search text during build
  * - Early termination when max results reached
- * 
+ *
  * @file TechnicianService.js
  * @module com/tns/fsm/timematerialext/app/utils/services/TechnicianService
  * @requires com/tns/fsm/timematerialext/app/utils/services/PersonService
@@ -33,14 +45,14 @@ sap.ui.define([
          * @private
          */
         _isLoaded: false,
-        
+
         /**
          * Flag to prevent concurrent loading.
          * @type {boolean}
          * @private
          */
         _isLoading: false,
-        
+
         /**
          * Promise for ongoing load operation.
          * @type {Promise|null}
@@ -72,7 +84,7 @@ sap.ui.define([
 
             this._isLoading = true;
             this._loadPromise = this._loadPersons();
-            
+
             try {
                 await this._loadPromise;
                 this._isLoaded = true;
@@ -99,6 +111,10 @@ sap.ui.define([
         /**
          * Build optimized array from PersonService cache.
          * Pre-computes search text for faster filtering.
+         *
+         * PersonService caches one object under several keys (every id and every
+         * externalId of that human), so the `key === person.id` guard is what
+         * keeps each person to a single entry here.
          * @private
          */
         _buildPersonsArray() {
@@ -106,21 +122,33 @@ sap.ui.define([
             const seenIds = new Set();
 
             PersonService._personCache.forEach((person, key) => {
-                // Only add each person once (by ID, not externalId duplicate)
+                // Only add each person once (the canonical key, not an alias)
                 if (key === person.id && !seenIds.has(person.id)) {
                     seenIds.add(person.id);
-                    
-                    // Pre-compute search text for faster filtering
+
+                    const ids = Array.isArray(person.ids) && person.ids.length > 0
+                        ? person.ids
+                        : [person.id].filter(Boolean);
+                    const externalIds = Array.isArray(person.externalIds) && person.externalIds.length > 0
+                        ? person.externalIds
+                        : [person.externalId].filter(Boolean);
+
+                    // Pre-compute search text for faster filtering.
+                    // Every externalId is searchable, so typing the externalId of
+                    // the collapsed identity still finds the person.
                     const searchText = [
                         person.firstName || '',
                         person.lastName || '',
-                        person.externalId || '',
+                        externalIds.join(' '),
                         person.fullName || ''
                     ].join(' ').toLowerCase();
 
                     this._personsArray.push({
                         id: person.id,
                         externalId: person.externalId,
+                        // Other identities of the same human - lookup only.
+                        ids: ids,
+                        externalIds: externalIds,
                         firstName: person.firstName,
                         lastName: person.lastName,
                         fullName: person.fullName,
@@ -170,22 +198,33 @@ sap.ui.define([
 
         /**
          * Get technician by ID.
+         *
+         * Matches the person's own id AND the ids of the Person rows merged into
+         * it, so an activity referencing the EMPLOYEE id still resolves.
          * @param {string} technicianId - Person ID
          * @returns {Object|null} Technician object or null
          */
         getTechnicianById(technicianId) {
             if (!technicianId || !this._isLoaded) return null;
-            return this._personsArray.find(p => p.id === technicianId) || null;
+            return this._personsArray.find(p =>
+                p.id === technicianId
+                || (Array.isArray(p.ids) && p.ids.indexOf(technicianId) !== -1)
+            ) || null;
         },
 
         /**
          * Get technician by externalId.
+         *
+         * Matches every externalId of the same human - see getTechnicianById.
          * @param {string} externalId - Person external ID
          * @returns {Object|null} Technician object or null
          */
         getTechnicianByExternalId(externalId) {
             if (!externalId || !this._isLoaded) return null;
-            return this._personsArray.find(p => p.externalId === externalId) || null;
+            return this._personsArray.find(p =>
+                p.externalId === externalId
+                || (Array.isArray(p.externalIds) && p.externalIds.indexOf(externalId) !== -1)
+            ) || null;
         },
 
         /**

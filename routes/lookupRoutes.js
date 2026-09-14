@@ -229,17 +229,29 @@ router.post("/get-udf-meta", async (req, res) => {
  * utils/FSMUdoService.js for why that resolution happens server-side instead of
  * one lookup per UUID from the browser.
  *
- * Query: ?personExternalId=egleizds1 restricts records to that person's own
- *        record (zero or one). Without it, every record is returned.
+ * Query: ?personExternalIds=egleizds1,egleizds2 restricts records to that
+ *        person's own record (zero or one). Without it, every record is
+ *        returned.
+ *
+ *        It is a LIST because one human has one Person row per type, each with
+ *        its own externalId, and their record may be stored under any of them.
+ *        The FIRST is the primary identity. ?personExternalId= (singular) is
+ *        still accepted.
  *
  * Response: { success, udoName, definition: { fields: [...] },
  *             records: [ { id, settings: [ { label, value } ] } ], count }
  */
 router.get("/get-user-settings", async (req, res) => {
-    const { personExternalId } = req.query;
+    const { personExternalIds, personExternalId } = req.query;
+
+    // Comma-separated in the query string; order is preserved.
+    const idList = String(personExternalIds || personExternalId || '')
+        .split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean);
 
     try {
-        const data = await FSMService.getUserSettings(undefined, personExternalId || null);
+        const data = await FSMService.getUserSettings(undefined, idList.length > 0 ? idList : null);
 
         res.json({
             success: true,
@@ -262,25 +274,36 @@ router.get("/get-user-settings", async (req, res) => {
  * Create or update the current user's settings record (UDO 'TMExt_UserSettings').
  *
  * Body: {
- *   personExternalId: "egleizds1",
+ *   personExternalIds: ["egleizds1", "egleizds2"],
  *   values: [ { externalId: "z_TM_DateType", value: "1" }, ... ]
  * }
  *
- * Upsert by externalId "<UdoMeta id>_<personExternalId>" - see saveUserSetting
+ * personExternalIds is the user's full identity list, primary first. Every entry
+ * is used to RECOGNISE an existing record (it may have been saved under any of
+ * them); only the first is used to build the externalId of a NEW one, so a fresh
+ * record is always keyed on the anchor identity. personExternalId (singular) is
+ * still accepted.
+ *
+ * Upsert by externalId "<UdoMeta id>_<primary externalId>" - see saveUserSetting
  * in utils/FSMUdoService.js. Selection values are the CODE, not the display text.
  */
 router.post("/save-user-setting", async (req, res) => {
-    const { personExternalId, values } = req.body;
+    const { personExternalIds, personExternalId, values } = req.body;
 
-    if (!personExternalId) {
-        return res.status(400).json({ message: 'personExternalId is required' });
+    const idList = (Array.isArray(personExternalIds) ? personExternalIds : [personExternalIds || personExternalId])
+        .filter(entry => typeof entry === 'string')
+        .map(entry => entry.trim())
+        .filter(Boolean);
+
+    if (idList.length === 0) {
+        return res.status(400).json({ message: 'personExternalIds is required' });
     }
     if (!Array.isArray(values) || values.length === 0) {
         return res.status(400).json({ message: 'values array is required' });
     }
 
     try {
-        const result = await FSMService.saveUserSetting(values, personExternalId);
+        const result = await FSMService.saveUserSetting(values, idList);
 
         res.json({
             success: true,

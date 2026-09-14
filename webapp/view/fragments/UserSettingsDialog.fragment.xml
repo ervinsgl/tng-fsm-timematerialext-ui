@@ -99,11 +99,26 @@
                             noDataText="{i18n>userSettingsNoFields}"
                             class="sapUiSizeCondensed">
                             <columns>
-                                <Column width="45%" hAlign="Begin">
+                                <Column width="30%" hAlign="Begin">
                                     <Text text="{i18n>userSettingsColSetting}"/>
                                 </Column>
-                                <Column hAlign="Begin">
+                                <Column width="40%" hAlign="Begin">
                                     <Text text="{i18n>userSettingsColValue}"/>
+                                </Column>
+                                <!-- What is actually in force right now: the value
+                                     stored in this user's record. It sits beside the
+                                     editable Value so the difference between "what I
+                                     am about to save" and "what is saved" is visible
+                                     in one row - which is what the second table used
+                                     to show in a separate block.
+
+                                     Pops in below the row on a phone rather than
+                                     squeezing three columns into ~380px. -->
+                                <Column hAlign="Begin"
+                                        demandPopin="true"
+                                        minScreenWidth="Tablet"
+                                        popinDisplay="Inline">
+                                    <Text text="{i18n>userSettingsColApplied}"/>
                                 </Column>
                             </columns>
                             <items>
@@ -138,6 +153,15 @@
                                                 wrapping="true"
                                                 visible="{= ${userSettings>options}.length === 0 }"/>
                                         </VBox>
+                                        <!-- The stored value, already resolved to its
+                                             readable form (a selection code shows as its
+                                             text, a person externalId as the name).
+                                             An en dash means this user has saved nothing
+                                             for this setting yet - distinguishable from a
+                                             setting saved as empty. -->
+                                        <Text
+                                            text="{= ${userSettings>savedDisplayValue} ? ${userSettings>savedDisplayValue} : '–' }"
+                                            wrapping="true"/>
                                     </cells>
                                 </ColumnListItem>
                             </items>
@@ -152,54 +176,11 @@
                     description="{userSettings>/emptyDescription}"
                     visible="{= ${userSettings>/recordCount} === 0 &amp;&amp; ${userSettings>/hasError} !== true &amp;&amp; ${userSettings>/busy} !== true }"/>
 
-                <!-- ============================================================
-                     The logged-in user's own saved record (at most one).
-                     Other people's records are filtered out server-side.
-                     ============================================================ -->
-                <List
-                    items="{path: 'userSettings>/records', templateShareable: false}"
-                    mode="None"
-                    showSeparators="None"
-                    visible="{= ${userSettings>/recordCount} > 0 }">
-                    <CustomListItem type="Inactive">
-                        <Panel expandable="true" expanded="true" class="sapUiTinyMarginBottom">
-                            <headerToolbar>
-                                <OverflowToolbar design="Info">
-                                    <core:Icon src="sap-icon://settings" class="sapUiTinyMarginEnd"/>
-                                    <Title text="{userSettings>title}" level="H5"/>
-                                    <ToolbarSpacer/>
-                                </OverflowToolbar>
-                            </headerToolbar>
-                            <content>
-                                <Table
-                                    items="{path: 'userSettings>settings', templateShareable: false}"
-                                    mode="None"
-                                    noDataText="{i18n>userSettingsNoValues}"
-                                    class="sapUiSizeCondensed">
-                                    <columns>
-                                        <Column width="45%" hAlign="Begin">
-                                            <Text text="{i18n>userSettingsColSetting}"/>
-                                        </Column>
-                                        <Column hAlign="Begin">
-                                            <Text text="{i18n>userSettingsColValue}"/>
-                                        </Column>
-                                    </columns>
-                                    <items>
-                                        <ColumnListItem type="Inactive">
-                                            <cells>
-                                                <Text text="{userSettings>label}" wrapping="true"/>
-                                                <!-- displayValue: a selection value is stored
-                                                     as its code ("1"), so the backend resolves
-                                                     it back to its text ("Current date"). -->
-                                                <Text text="{userSettings>displayValue}" wrapping="true"/>
-                                            </cells>
-                                        </ColumnListItem>
-                                    </items>
-                                </Table>
-                            </content>
-                        </Panel>
-                    </CustomListItem>
-                </List>
+                <!-- The separate "your saved settings" table that used to sit here
+                     was removed: its one useful column is now the third column of
+                     the table above (savedDisplayValue), so the stored value reads
+                     on the same row as the setting it belongs to instead of in a
+                     second block the user had to cross-reference. -->
 
             </VBox>
         </content>

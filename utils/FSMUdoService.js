@@ -167,6 +167,30 @@ function isSafeFsqlLiteral(value) {
 }
 
 /**
+ * Normalise a person-identity argument to a clean, de-duplicated list.
+ *
+ * A user is not one externalId. FSM stores one Person row per type for the same
+ * human - 'egleizds1' (ERPUSER) and 'egleizds2' (EMPLOYEE) - and their settings
+ * record may carry either. Every function here that identifies a person takes
+ * the whole list, and ORDER MATTERS: [0] is the primary (anchor) identity, the
+ * one a newly created record is keyed on.
+ *
+ * A bare string is accepted so older callers keep working.
+ *
+ * @param {string|string[]|null|undefined} value
+ * @returns {string[]} non-empty trimmed strings, duplicates removed, order kept
+ */
+function normalizePersonExternalIds(value) {
+    const list = Array.isArray(value) ? value : (value ? [value] : []);
+    return [...new Set(
+        list
+            .filter(entry => typeof entry === 'string')
+            .map(entry => entry.trim())
+            .filter(Boolean)
+    )];
+}
+
+/**
  * Human label for a UDF, most specific first.
  * description is what the settings tables show; the rest are fallbacks so a row
  * is never lost just because a field is empty in FSM.
@@ -417,15 +441,21 @@ module.exports = {
     /**
      * Read the app's user settings from FSM, definition and records together.
      *
-     * When personExternalId is given, only THAT person's record is returned
+     * When personExternalIds is given, only THAT person's record is returned
      * (zero or one). Everyone else's settings then never leave the server -
      * the dialog only ever shows the logged-in user's own record.
      *
+     * personExternalIds is a LIST, not one value: the same human has one Person
+     * row per type, each with its own externalId ('egleizds1' = ERPUSER,
+     * 'egleizds2' = EMPLOYEE). A record saved under any of them is the same
+     * person's record and must be found - see findUserSettingRecordForPerson.
+     * A bare string is still accepted.
+     *
      * @param {string} [udoMetaName=TMExt_UserSettings] - UDO definition name
-     * @param {string} [personExternalId] - restrict records to this person
+     * @param {string|string[]} [personExternalIds] - restrict records to this person
      * @returns {Promise<{udoName: string, definition: Object|null, records: Array<Object>}>}
      */
-    async getUserSettings(udoMetaName = USER_SETTINGS_UDO_NAME, personExternalId = null) {
+    async getUserSettings(udoMetaName = USER_SETTINGS_UDO_NAME, personExternalIds = null) {
         // Definition and records are independent - fetch both at once.
         const [udoMeta, udoValues] = await Promise.all([
             this.getUdoMetaByName(udoMetaName),
@@ -543,9 +573,14 @@ module.exports = {
         const result = { udoName: udoMetaName, definition: definition, records: records };
 
         // Narrow to the one person's record when asked.
-        if (personExternalId) {
-            const derivedExternalId = definition?.id ? `${definition.id}_${personExternalId}` : null;
-            const own = this.findUserSettingRecordForPerson(personExternalId, derivedExternalId, result);
+        const idList = normalizePersonExternalIds(personExternalIds);
+        if (idList.length > 0) {
+            // One candidate externalId per identity - a record saved under the
+            // EMPLOYEE externalId is still this person's record.
+            const derivedExternalIds = definition?.id
+                ? idList.map(externalId => `${definition.id}_${externalId}`)
+                : [];
+            const own = this.findUserSettingRecordForPerson(idList, derivedExternalIds, result);
             result.records = own ? [own] : [];
         }
 
@@ -567,34 +602,50 @@ module.exports = {
      *   dialog already runs, and it comes back with every UDF externalId already
      *   resolved, so the match is a plain comparison.
      *
+     * WHY A LIST OF externalIds AND NOT ONE
+     *   The same human has one Person row per type, each with its own externalId
+     *   ('egleizds1' = ERPUSER, 'egleizds2' = EMPLOYEE). Whichever one was
+     *   current when a record was first saved is what sits in its z_TM_PersonID.
+     *   Matching on a single "current" externalId would miss a record stored
+     *   under the other one, and the caller would then CREATE a second record -
+     *   leaving the user with two settings records and their saved choice
+     *   silently unreachable.
+     *
+     *   Matching against every identity the user resolves to closes that hole and
+     *   also repairs records written before the identity order was made
+     *   deterministic: they are found and updated in place.
+     *
      * Two ways a record can belong to the person, checked in order:
-     *   1. its person UDF holds that externalId - works for records created by
-     *      hand in FSM, which have no externalId of their own
-     *   2. its own externalId is the one this app derives - the belt-and-braces
+     *   1. its person UDF holds ANY of those externalIds - works for records
+     *      created by hand in FSM, which have no externalId of their own
+     *   2. its own externalId is one this app would derive - the belt-and-braces
      *      case, in case the person UDF was cleared
      *
      * The person UDF is identified by the definition's fillWith flag, not by
      * name, so it keeps working if the field is renamed in FSM.
      *
-     * @param {string} personExternalId - Person externalId
-     * @param {string} recordExternalId - the externalId this app would derive
+     * @param {string|string[]} personExternalIds - every Person externalId of this user
+     * @param {string|string[]} recordExternalIds - the externalIds this app would derive
      * @param {Object} settings - result of getUserSettings()
      * @returns {Object|null} the matching record, or null when the person has none
      */
-    findUserSettingRecordForPerson(personExternalId, recordExternalId, settings) {
+    findUserSettingRecordForPerson(personExternalIds, recordExternalIds, settings) {
         const records = settings?.records || [];
         if (records.length === 0) return null;
+
+        const personIdSet = new Set(normalizePersonExternalIds(personExternalIds));
+        const recordIdSet = new Set(normalizePersonExternalIds(recordExternalIds));
 
         const personFieldExternalId = (settings?.definition?.fields || [])
             .find(field => field.fillWith === 'PERSON_EXTERNAL_ID')?.externalId || null;
 
         return records.find(record => {
-            if (personFieldExternalId) {
+            if (personFieldExternalId && personIdSet.size > 0) {
                 const hit = (record.settings || []).some(setting =>
-                    setting.externalId === personFieldExternalId && setting.value === personExternalId);
+                    setting.externalId === personFieldExternalId && personIdSet.has(setting.value));
                 if (hit) return true;
             }
-            return record.externalId === recordExternalId;
+            return record.externalId ? recordIdSet.has(record.externalId) : false;
         }) || null;
     },
 
@@ -626,28 +677,35 @@ module.exports = {
      * note on selectionKeyValues at the top of this file).
      *
      * @param {Array<{externalId: string, value: *}>} settingValues - one entry per setting to write
-     * @param {string} personExternalId - Person externalId the record belongs to
+     * @param {string|string[]} personExternalIds - every Person externalId of this user;
+     *        the FIRST is the primary (the anchor ERPUSER identity) and is what a
+     *        newly derived record externalId is built from. The rest are used only
+     *        to RECOGNISE an existing record, never to create one.
      * @param {string} [udoMetaName=TMExt_UserSettings] - UDO definition name
      * @returns {Promise<{externalId: string, id: string|null, created: boolean, data: Object}>}
      */
-    async saveUserSetting(settingValues, personExternalId, udoMetaName = USER_SETTINGS_UDO_NAME) {
-        if (!personExternalId) {
-            throw new Error('saveUserSetting: personExternalId is required - it is part of the record externalId');
+    async saveUserSetting(settingValues, personExternalIds, udoMetaName = USER_SETTINGS_UDO_NAME) {
+        const idList = normalizePersonExternalIds(personExternalIds);
+        if (idList.length === 0) {
+            throw new Error('saveUserSetting: personExternalIds is required - it is part of the record externalId');
         }
         if (!Array.isArray(settingValues) || settingValues.length === 0) {
             throw new Error('saveUserSetting: no setting values to write');
         }
 
         // One read, already narrowed to this person: gives the UDO id and, when
-        // the person has one, their existing record.
-        const settings = await this.getUserSettings(udoMetaName, personExternalId);
+        // the person has one, their existing record - found under ANY of their
+        // identities, so an older record is updated instead of duplicated.
+        const settings = await this.getUserSettings(udoMetaName, idList);
         const udoMetaId = settings?.definition?.id || null;
 
         if (!udoMetaId) {
             throw new Error(`saveUserSetting: UDO '${udoMetaName}' not found in FSM`);
         }
 
-        const recordExternalId = `${udoMetaId}_${personExternalId}`;
+        // Derived from the PRIMARY identity only - a new record is always created
+        // under the anchor externalId, never under a secondary one.
+        const recordExternalId = `${udoMetaId}_${idList[0]}`;
         const existing = settings.records[0] || null;
 
         // Drop empty values: FSM would otherwise store empty strings for settings

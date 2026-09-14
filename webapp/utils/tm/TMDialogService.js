@@ -81,16 +81,22 @@ sap.ui.define([
         },
 
         /**
-         * Person externalId of the logged-in user, resolved at startup by
-         * DataLoadingMixin._loadOrganizationLevels(). Used to read that user's
-         * own settings record.
-         * @returns {string} externalId, or '' when the user is unresolved
+         * EVERY Person externalId of the logged-in user, primary first, resolved
+         * at startup by DataLoadingMixin._loadOrganizationLevels(). Used to read
+         * that user's own settings record.
+         *
+         * All of them, not just the first: FSM stores one Person row per type for
+         * the same human ('egleizds1' = ERPUSER, 'egleizds2' = EMPLOYEE) and the
+         * settings record may sit under either. Reading with one identity only
+         * can miss the record and make the app behave as if none was saved.
+         *
+         * @returns {string[]} externalIds, empty when the user is unresolved
          * @private
          */
-        _getPersonExternalId() {
+        _getPersonExternalIds() {
             const oViewModel = this._controller?.getView?.().getModel("view");
             const aExternalIds = oViewModel?.getProperty("/webContainerContext/personExternalIds") || [];
-            return aExternalIds.length > 0 ? String(aExternalIds[0]) : "";
+            return aExternalIds.map(sId => String(sId)).filter(Boolean);
         },
 
         /**
@@ -245,7 +251,7 @@ sap.ui.define([
                 TimeTaskService.fetchTimeTasks(),
                 ItemService.fetchItems(),
                 ExpenseTypeService.fetchExpenseTypes(),
-                UserSettingsService.ensureLoaded(this._getPersonExternalId())
+                UserSettingsService.ensureLoaded(this._getPersonExternalIds())
             ]);
 
             // Process Time Tasks result

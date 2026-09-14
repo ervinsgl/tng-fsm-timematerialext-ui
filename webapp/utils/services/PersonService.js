@@ -1,23 +1,35 @@
 /**
  * PersonService.js
- * 
+ *
  * Frontend service for person data management.
  * Handles on-demand loading, caching, and lookup of persons.
- * 
+ *
  * Key Features:
  * - On-demand loading by ID or externalId
- * - Dual caching: by ID and by externalId for fast lookup
+ * - Multi-key caching: by ID and by externalId for fast lookup
  * - Prevention of duplicate concurrent requests
  * - Batch preloading for optimized loading
  * - Full person list loading for search functionality
- * 
+ *
  * Display Format: "John Doe"
- * 
+ *
+ * ONE HUMAN, SEVERAL IDENTITIES
+ *   FSM stores one Person row per type for the same human - an ERPUSER row and
+ *   an EMPLOYEE row - each with its OWN id and its OWN externalId (e.g.
+ *   'egleizds1' and 'egleizds2'). /get-persons collapses them to one entry per
+ *   human and returns the dropped identities in `ids` / `externalIds`.
+ *
+ *   This service caches that single entry under EVERY one of those keys, so a
+ *   reference coming from anywhere in FSM - an activity's responsible, a
+ *   supportingPersons id, a createPerson - resolves to the same person no
+ *   matter which identity it names. The cache therefore holds several keys
+ *   pointing at one shared object; that is intentional, not duplication.
+ *
  * API Endpoints Used:
  * - POST /api/get-person-by-id
  * - POST /api/get-person-by-external-id
  * - POST /api/get-persons (loadAll: true)
- * 
+ *
  * @file PersonService.js
  * @module com/tns/fsm/timematerialext/app/utils/services/PersonService
  */
@@ -26,12 +38,13 @@ sap.ui.define([], () => {
 
     return {
         /**
-         * Cache for person data (keyed by both ID and externalId).
-         * @type {Map<string, {id: string, externalId: string, firstName: string, lastName: string, fullName: string}>}
+         * Cache for person data (keyed by every ID and every externalId the
+         * person has - several keys may share one value object).
+         * @type {Map<string, {id: string, externalId: string, ids: string[], externalIds: string[], firstName: string, lastName: string, fullName: string}>}
          * @private
          */
         _personCache: new Map(),
-        
+
         /**
          * Track ongoing loads to prevent duplicate requests.
          * @type {Map<string, Promise>}
@@ -76,6 +89,45 @@ sap.ui.define([], () => {
         },
 
         /**
+         * Build the cached shape from an API person and register it under every
+         * key that person can be referenced by.
+         *
+         * `ids` / `externalIds` come from /get-persons, which merges the Person
+         * rows of one human. The single-person endpoints return one row and so
+         * have neither - the person's own id/externalId are then the only keys,
+         * exactly as before.
+         *
+         * @param {Object} person - person object from the API
+         * @returns {Object} the cached person data
+         * @private
+         */
+        _cachePerson(person) {
+            const personData = {
+                id: person.id,
+                externalId: person.externalId,
+                // Every identity of this human; used for lookups, never shown.
+                ids: Array.isArray(person.ids) && person.ids.length > 0
+                    ? person.ids
+                    : [person.id].filter(Boolean),
+                externalIds: Array.isArray(person.externalIds) && person.externalIds.length > 0
+                    ? person.externalIds
+                    : [person.externalId].filter(Boolean),
+                firstName: person.firstName,
+                lastName: person.lastName,
+                fullName: this._formatFullName(person.firstName, person.lastName)
+            };
+
+            personData.ids.forEach(id => {
+                if (id) this._personCache.set(id, personData);
+            });
+            personData.externalIds.forEach(externalId => {
+                if (externalId) this._personCache.set(externalId, personData);
+            });
+
+            return personData;
+        },
+
+        /**
          * Load person by ID (async, caches result).
          * @param {string} personId - Person ID
          * @returns {Promise<void>}
@@ -104,19 +156,7 @@ sap.ui.define([], () => {
                     const person = data.person;
 
                     if (person) {
-                        const personData = {
-                            id: person.id,
-                            externalId: person.externalId,
-                            firstName: person.firstName,
-                            lastName: person.lastName,
-                            fullName: this._formatFullName(person.firstName, person.lastName)
-                        };
-
-                        this._personCache.set(person.id, personData);
-                        
-                        if (person.externalId) {
-                            this._personCache.set(person.externalId, personData);
-                        }
+                        this._cachePerson(person);
                     }
 
                 } catch (error) {
@@ -159,19 +199,7 @@ sap.ui.define([], () => {
                     const person = data.person;
 
                     if (person) {
-                        const personData = {
-                            id: person.id,
-                            externalId: person.externalId,
-                            firstName: person.firstName,
-                            lastName: person.lastName,
-                            fullName: this._formatFullName(person.firstName, person.lastName)
-                        };
-
-                        this._personCache.set(person.id, personData);
-                        
-                        if (person.externalId) {
-                            this._personCache.set(person.externalId, personData);
-                        }
+                        this._cachePerson(person);
                     }
 
                 } catch (error) {
@@ -218,6 +246,9 @@ sap.ui.define([], () => {
         /**
          * Load all persons from FSM API (for search functionality).
          * Use sparingly - loads 4000+ records.
+         *
+         * The backend returns ONE entry per human (the Person rows of one person
+         * are merged), each carrying its other identities - see _cachePerson.
          * @returns {Promise<void>}
          */
         async loadAllPersons() {
@@ -236,19 +267,7 @@ sap.ui.define([], () => {
                 const persons = data.persons || [];
 
                 persons.forEach(person => {
-                    const personData = {
-                        id: person.id,
-                        externalId: person.externalId,
-                        firstName: person.firstName,
-                        lastName: person.lastName,
-                        fullName: this._formatFullName(person.firstName, person.lastName)
-                    };
-
-                    this._personCache.set(person.id, personData);
-                    
-                    if (person.externalId) {
-                        this._personCache.set(person.externalId, personData);
-                    }
+                    this._cachePerson(person);
                 });
 
             } catch (error) {

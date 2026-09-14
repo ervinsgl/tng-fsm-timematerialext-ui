@@ -90,8 +90,13 @@ sap.ui.define([
                         // first "Add Entry" does not wait for them. Fire-and-forget:
                         // the dialog awaits them anyway, and a failure here only means
                         // entries fall back to the activity's planned start date.
+                        // The WHOLE identity list, not [0]: the user's settings
+                        // record may be stored under the externalId of any of
+                        // their Person rows (ERPUSER / EMPLOYEE), and sending
+                        // only one risks missing it and creating a duplicate.
+                        // The list is ranked backend-side, so [0] stays stable.
                         UserSettingsService.ensureLoaded(
-                            (resolvedOrgLevel.personExternalIds || [])[0] || ""
+                            resolvedOrgLevel.personExternalIds || []
                         );
                         viewModel.setProperty("/selectedOrganizationLevel", {
                             key: resolvedOrgLevel.id,
@@ -401,11 +406,32 @@ sap.ui.define([
         /**
          * Load all activities for a service call.
          *
-         * Filtering: ORGANIZATION LEVEL ONLY.
-         * The assignment filter (responsible / supporting technician) was removed -
-         * every user who can open the app sees all activities of the service order
-         * that match their organization level. Who may open the app at all is
-         * controlled in FSM Admin via Policy Groups.
+         * FILTERING - TWO STAGES, THE SECOND ONE MOBILE-ONLY
+         *
+         *   1. Organization level - always, in every context.
+         *   2. User assignment (responsible / supporting technician) - ONLY when
+         *      the app runs inside the FSM Mobile Web Container.
+         *
+         * WHY STAGE 2 IS MOBILE-ONLY
+         *   FSM Policy Groups do not reach this app. Every FSM call this app makes
+         *   goes through a BTP destination using OAuth2 *client credentials* - a
+         *   technical client with no user identity - so there is no user policy for
+         *   FSM to apply, in either context.
+         *
+         *   In the FSM Web UI the shell can at least be ASKED what the user may do
+         *   (SHELL_EVENTS.Version3.GET_PERMISSIONS), but that answer is a UI hint;
+         *   it does not filter query results. In the Mobile Web Container there is
+         *   no shell at all, so not even the hint exists.
+         *
+         *   Restricting the mobile app to the technician's own activities is
+         *   therefore done here, in app code. The web path deliberately keeps the
+         *   full org-level view - it is used by dispatchers.
+         *
+         *   NOTE this makes visibility depend on the DEVICE, not only on the user.
+         *   It is an ergonomic restriction, not a security boundary: the same
+         *   person opening the web path still sees everything. Anything stricter
+         *   needs a role source FSM can give us (a Person UDF) and server-side
+         *   enforcement in the Node layer.
          *
          * @private
          */
@@ -454,11 +480,11 @@ sap.ui.define([
                         });
                     });
 
-                    // NOTE: The former "FILTER 2: User assignment (responsible or
-                    // supporting technician)" block was removed here. It fetched
-                    // ActivityService.fetchActivityTechnicians() per activity purely
-                    // to decide visibility. Removing it also removes those extra
-                    // round-trips from the initial load.
+                    // FILTER 2: User assignment - MOBILE ONLY (see the method doc).
+                    // The web path skips this entirely and keeps the org-level view.
+                    if (ContextService.isInMobile()) {
+                        filteredActivities = await this._filterActivitiesByAssignment(filteredActivities);
+                    }
 
                     // Show info messages about filtering
                     const filteredOutCount = totalVisibleCount - filteredActivities.length;
@@ -699,6 +725,124 @@ sap.ui.define([
             }
 
             model.refresh(true);
+        },
+
+        /**
+         * Keep only the activities the logged-in user is assigned to, as
+         * responsible OR as a supporting technician. Mobile Web Container only.
+         *
+         * IDENTITY - WHY THIS IS SAFER THAN THE FILTER WE DELETED
+         *   One human has several Person rows (ERPUSER + EMPLOYEE), each with its
+         *   own id and externalId. An activity may reference EITHER. The earlier
+         *   version of this filter compared against a single identity, so a user
+         *   whose activities referenced the other row would have seen NOTHING -
+         *   with no error, just an empty list. This version matches against every
+         *   id and externalId the user resolves to.
+         *
+         * ROUND TRIPS - WHY THIS IS NOT THE OLD N+1
+         *   The old filter called fetchActivityTechnicians() for EVERY activity
+         *   purely to decide visibility. Here the composite-tree payload is used
+         *   first; only activities whose supportingPersons the tree did not carry
+         *   are fetched, in bounded parallel. When the tree carries the field -
+         *   check this with one composite-tree response, and this fallback can be
+         *   deleted - the filter costs zero extra requests.
+         *
+         * FAIL CLOSED
+         *   If the user's identity could not be resolved, nothing is shown. For a
+         *   visibility restriction, showing everything on an unresolved identity
+         *   is the wrong way to fail.
+         *
+         * @param {Array<Object>} activities - activities that passed the org-level filter
+         * @returns {Promise<Array<Object>>} only the activities assigned to the user
+         * @private
+         */
+        async _filterActivitiesByAssignment(activities) {
+            if (!activities || activities.length === 0) return [];
+
+            const viewModel = this.getView().getModel("view");
+
+            // Every identity of this user - see the identity note above.
+            const userKeys = new Set([
+                ...(viewModel.getProperty("/webContainerContext/personIds") || []),
+                ...(viewModel.getProperty("/webContainerContext/personExternalIds") || [])
+            ].filter(Boolean).map(key => String(key)));
+
+            if (userKeys.size === 0) {
+                console.warn("DataLoadingMixin: no person identity resolved - " +
+                    "hiding all activities rather than showing unfiltered data");
+                return [];
+            }
+
+            // Activities the composite tree did not describe fully: ask FSM for
+            // those, and only those.
+            const needsLookup = activities.filter(activity => !this._hasAssignmentData(activity));
+            const fetchedById = new Map();
+
+            if (needsLookup.length > 0) {
+                const CHUNK = 5;
+                for (let i = 0; i < needsLookup.length; i += CHUNK) {
+                    const chunk = needsLookup.slice(i, i + CHUNK);
+                    const results = await Promise.allSettled(
+                        chunk.map(activity => ActivityService.fetchActivityTechnicians(activity.id))
+                    );
+                    results.forEach((result, index) => {
+                        if (result.status === "fulfilled") {
+                            fetchedById.set(chunk[index].id, result.value);
+                        } else {
+                            // A failed lookup must not silently reveal the activity.
+                            console.error("DataLoadingMixin: assignment lookup failed for activity "
+                                + chunk[index].id, result.reason);
+                        }
+                    });
+                }
+            }
+
+            return activities.filter(activity => {
+                const assignment = this._hasAssignmentData(activity)
+                    ? { responsibleIds: activity.responsibles, supportingPersonIds: activity.supportingPersons }
+                    : fetchedById.get(activity.id);
+
+                // No data (lookup failed) -> not visible. Fail closed.
+                if (!assignment) return false;
+
+                return this._matchesAnyPerson(assignment.responsibleIds, userKeys)
+                    || this._matchesAnyPerson(assignment.supportingPersonIds, userKeys);
+            });
+        },
+
+        /**
+         * True when the activity already carries its assignment fields, so no
+         * extra request is needed to judge it.
+         * @param {Object} activity
+         * @returns {boolean}
+         * @private
+         */
+        _hasAssignmentData(activity) {
+            return Array.isArray(activity?.responsibles) || Array.isArray(activity?.supportingPersons);
+        },
+
+        /**
+         * Does any entry of a person reference list name one of the user's identities?
+         *
+         * FSM is inconsistent about the shape of these lists - sometimes plain id
+         * strings, sometimes objects carrying id / externalId / person - so every
+         * shape is checked rather than assuming one.
+         *
+         * @param {Array} personRefs - responsibles / supportingPersons, any shape
+         * @param {Set<string>} userKeys - every id and externalId of the user
+         * @returns {boolean}
+         * @private
+         */
+        _matchesAnyPerson(personRefs, userKeys) {
+            if (!Array.isArray(personRefs)) return false;
+
+            return personRefs.some(ref => {
+                if (!ref) return false;
+                if (typeof ref === "string") return userKeys.has(ref);
+                return [ref.id, ref.externalId, ref.person, ref.personId, ref.code]
+                    .filter(Boolean)
+                    .some(value => userKeys.has(String(value)));
+            });
         },
 
         /**

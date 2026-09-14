@@ -61,8 +61,7 @@ sap.ui.define([
                     emptyDescription: "",
                     fieldCount: 0,
                     fields: [],
-                    recordCount: 0,
-                    records: []
+                    recordCount: 0
                 }), "userSettings");
             }
 
@@ -104,8 +103,8 @@ sap.ui.define([
 
             // The person externalId is half of the record key, so without it
             // there is nothing to address.
-            const personExternalId = this._getCurrentPersonExternalId();
-            if (!personExternalId) {
+            const personExternalIds = this._getCurrentPersonExternalIds();
+            if (personExternalIds.length === 0) {
                 MessageBox.error(this._getText("msgUserSettingNoPerson"));
                 return;
             }
@@ -128,7 +127,10 @@ sap.ui.define([
             model.setProperty("/busy", true);
 
             try {
-                const result = await UserSettingsService.saveUserSetting(personExternalId, values);
+                // All identities go down: any one of them may key the record that
+                // already exists, and sending only the primary would create a
+                // second one. The backend still writes new records under [0].
+                const result = await UserSettingsService.saveUserSetting(personExternalIds, values);
 
                 MessageToast.show(this._getText(
                     result.created ? "msgUserSettingCreated" : "msgUserSettingUpdated"
@@ -155,8 +157,9 @@ sap.ui.define([
          *
          * Adds only presentation state; labels, values and dropdown options
          * arrive from the backend already resolved:
-         *   /fields  - definition fields + selectedValue / displayValue
-         *   /records - stored records + a panel title
+         *   /fields      - definition fields, each with selectedValue (editable),
+         *                  displayValue and savedDisplayValue (what is in force)
+         *   /recordCount - 0 or 1; drives the header badge and the empty state
          *
          * @param {boolean} forceReload - bypass the UserSettingsService cache
          * @private
@@ -169,16 +172,47 @@ sap.ui.define([
             model.setProperty("/hasError", false);
 
             try {
-                const personExternalId = this._getCurrentPersonExternalId();
+                // The whole set is used to FIND the record; [0] - the primary
+                // (anchor) identity - is what a person field displays and what a
+                // new record would be keyed on.
+                const personExternalIds = this._getCurrentPersonExternalIds();
+                const personExternalId = personExternalIds[0] || "";
                 const personDisplayName = this._getCurrentPersonDisplayName();
 
                 // The backend narrows this to the logged-in user: zero records
                 // when they have never saved, exactly one when they have.
-                const data = await UserSettingsService.fetchUserSettings(forceReload, personExternalId);
+                const data = await UserSettingsService.fetchUserSettings(forceReload, personExternalIds);
                 const ownRecord = (data?.records || [])[0] || null;
 
-                // Table 1: every possible setting, from the UDO definition,
-                // pre-filled from the user's own record when there is one.
+                // What this user has ACTUALLY saved, keyed so each definition field
+                // can find its own stored value. Keyed by UDF externalId first and
+                // by meta UUID as well, because a record written before a field was
+                // renamed in FSM still carries the old externalId but the same UUID.
+                //
+                // A person setting is STORED as an externalId ('egleizds1'), which is
+                // not what a person wants to read, so it resolves to the name - but
+                // only when the stored value is one of THIS user's identities. A
+                // value belonging to someone else stays as stored rather than being
+                // mislabelled with their name.
+                const personFieldExternalId = (data?.definition?.fields || [])
+                    .find(field => field.fillWith === "PERSON_EXTERNAL_ID")?.externalId || null;
+
+                const savedByKey = new Map();
+                (ownRecord?.settings || []).forEach(setting => {
+                    const isOwnPersonValue = personFieldExternalId
+                        && setting.externalId === personFieldExternalId
+                        && personExternalIds.indexOf(setting.value) !== -1;
+
+                    const shown = (isOwnPersonValue && personDisplayName)
+                        ? personDisplayName
+                        : (setting.displayValue || "");
+
+                    if (setting.externalId) savedByKey.set(setting.externalId, shown);
+                    if (setting.metaId) savedByKey.set(setting.metaId, shown);
+                });
+
+                // One table: every possible setting from the UDO definition, with the
+                // editable value AND the value currently in force side by side.
                 const fields = (data?.definition?.fields || []).map(field => {
                     // selectedValue is the STORED value - the externalId for a
                     // person field, the option code for a selection field.
@@ -189,12 +223,18 @@ sap.ui.define([
                     return {
                         ...field,
                         selectedValue: selectedValue,
-                        // displayValue is what the table shows. Same as
+                        // displayValue is what the editable column shows. Same as
                         // selectedValue except for person fields, where the
                         // name reads better than the externalId.
                         displayValue: field.fillWith === "PERSON_EXTERNAL_ID"
                             ? (personDisplayName || selectedValue)
-                            : selectedValue
+                            : selectedValue,
+                        // The "applied" column: what is saved in FSM right now.
+                        // "" when this user has saved nothing for this setting -
+                        // the table renders that as an en dash.
+                        savedDisplayValue: savedByKey.get(field.externalId)
+                            || savedByKey.get(field.metaId)
+                            || ""
                     };
                 });
 
@@ -202,15 +242,9 @@ sap.ui.define([
                 model.setProperty("/fields", fields);
                 model.setProperty("/fieldCount", fields.length);
 
-                // The user's own saved record, shown below the editable table.
-                const records = ownRecord ? [{
-                    id: ownRecord.id,
-                    title: this._getText("userSettingsOwnRecordTitle"),
-                    settings: ownRecord.settings || []
-                }] : [];
-
-                model.setProperty("/records", records);
-                model.setProperty("/recordCount", records.length);
+                // No record list any more - only the count, which still drives the
+                // "saved" badge in the header and the empty state below.
+                model.setProperty("/recordCount", ownRecord ? 1 : 0);
 
                 // Empty state names the user, so it is a model property rather
                 // than a static i18n binding in the fragment.
@@ -224,7 +258,6 @@ sap.ui.define([
                 model.setProperty("/fields", []);
                 model.setProperty("/fieldCount", 0);
                 model.setProperty("/definitionDescription", "");
-                model.setProperty("/records", []);
                 model.setProperty("/recordCount", 0);
                 model.setProperty("/hasError", true);
 
@@ -238,7 +271,7 @@ sap.ui.define([
          * ========================================================================= */
 
         /**
-         * Person externalId of the logged-in user.
+         * EVERY Person externalId of the logged-in user, primary first.
          *
          * Resolved once at startup by _loadOrganizationLevels():
          *   userName -> User API -> Person (or UnifiedPerson on the fallback
@@ -246,16 +279,24 @@ sap.ui.define([
          * and stored on /webContainerContext/personExternalIds. Whichever of
          * the two paths answered is the one used here - no extra lookup.
          *
-         * A user can have several identity rows (EMPLOYEE + ERPUSER); the
-         * first is taken, same as everywhere else in the app.
+         * WHY A LIST
+         *   FSM stores one Person row per type for the same human, each with its
+         *   own externalId - 'egleizds1' (ERPUSER) and 'egleizds2' (EMPLOYEE).
+         *   A settings record may sit under either. Reading or writing with only
+         *   one of them can miss an existing record and create a duplicate, so
+         *   every call that identifies the user carries the whole list.
          *
-         * @returns {string} externalId, or '' when the user could not be resolved
+         *   The backend ranks them, so [0] is the anchor (ERPUSER) identity and
+         *   is stable across calls - that is the one a new record is keyed on and
+         *   the one shown in the dialog.
+         *
+         * @returns {string[]} externalIds, empty when the user could not be resolved
          * @private
          */
-        _getCurrentPersonExternalId() {
+        _getCurrentPersonExternalIds() {
             const viewModel = this.getView().getModel("view");
             const externalIds = viewModel?.getProperty("/webContainerContext/personExternalIds") || [];
-            return externalIds.length > 0 ? String(externalIds[0]) : "";
+            return externalIds.map(entry => String(entry)).filter(Boolean);
         },
 
         /**

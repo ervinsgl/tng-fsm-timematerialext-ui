@@ -61,20 +61,47 @@ sap.ui.define([
      */
     let _loadingPromise = null;
 
+    /**
+     * Normalise a person-identity argument to a clean list, order preserved.
+     *
+     * The app knows a user by several Person externalIds (one per Person type).
+     * Every call that identifies the user carries all of them; [0] is primary.
+     * A bare string is accepted so older callers keep working.
+     *
+     * @param {string|string[]|null|undefined} value
+     * @returns {string[]}
+     * @private
+     */
+    function _toIdList(value) {
+        const list = Array.isArray(value) ? value : (value ? [value] : []);
+        return [...new Set(
+            list
+                .filter(entry => typeof entry === "string")
+                .map(entry => entry.trim())
+                .filter(Boolean)
+        )];
+    }
+
     return {
 
         /**
          * Fetch the UDO definition and the settings records.
          * Returns the cache unless forceReload is set.
          *
-         * With personExternalId the backend returns only that person's own
+         * With personExternalIds the backend returns only that person's own
          * record (zero or one) - nobody else's settings reach the browser.
          *
+         * It is a LIST because one human has one Person row per type, each with
+         * its own externalId ('egleizds1' = ERPUSER, 'egleizds2' = EMPLOYEE),
+         * and their record may be stored under any of them. Sending all of them
+         * is what stops the app from missing an existing record and creating a
+         * duplicate. The FIRST is the primary identity. A bare string still works.
+         *
          * @param {boolean} [forceReload=false] - bypass the cache
-         * @param {string} [personExternalId] - restrict records to this person
+         * @param {string|string[]} [personExternalIds] - restrict records to this person
          * @returns {Promise<{definition: Object|null, records: Array<Object>}>}
          */
-        async fetchUserSettings(forceReload, personExternalId) {
+        async fetchUserSettings(forceReload, personExternalIds) {
             if (!forceReload && _data !== null) {
                 return _data;
             }
@@ -85,8 +112,9 @@ sap.ui.define([
 
             _loadingPromise = (async () => {
                 try {
-                    const url = personExternalId
-                        ? `/api/v1/get-user-settings?personExternalId=${encodeURIComponent(personExternalId)}`
+                    const idList = _toIdList(personExternalIds);
+                    const url = idList.length > 0
+                        ? `/api/v1/get-user-settings?personExternalIds=${encodeURIComponent(idList.join(","))}`
                         : "/api/v1/get-user-settings";
 
                     const response = await fetch(url, {
@@ -129,15 +157,17 @@ sap.ui.define([
          *
          * The cache is dropped on success, so the next fetch shows the record.
          *
-         * @param {string} personExternalId - Person externalId the record belongs to
+         * @param {string|string[]} personExternalIds - every Person externalId of this
+         *        user, primary first. All are used to find an existing record;
+         *        only the first keys a new one.
          * @param {Array<{externalId: string, value: string}>} values - one entry per setting
          * @returns {Promise<{externalId: string, created: boolean}>}
          */
-        async saveUserSetting(personExternalId, values) {
+        async saveUserSetting(personExternalIds, values) {
             const response = await fetch("/api/v1/save-user-setting", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ personExternalId, values })
+                body: JSON.stringify({ personExternalIds: _toIdList(personExternalIds), values })
             });
 
             const body = await response.json().catch(() => ({}));
@@ -160,14 +190,15 @@ sap.ui.define([
          * Load the settings once, if they are not cached yet.
          * Safe to call on every use - it is a no-op after the first load.
          *
-         * @param {string} personExternalId - the logged-in user's Person externalId
+         * @param {string|string[]} personExternalIds - the logged-in user's Person
+         *        externalIds, primary first
          * @returns {Promise<void>}
          */
-        async ensureLoaded(personExternalId) {
+        async ensureLoaded(personExternalIds) {
             if (this.isLoaded()) return;
 
             try {
-                await this.fetchUserSettings(false, personExternalId);
+                await this.fetchUserSettings(false, personExternalIds);
             } catch (error) {
                 // Never let a settings problem block the feature that uses it -
                 // callers fall back to their own defaults.

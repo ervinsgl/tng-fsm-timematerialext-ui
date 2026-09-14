@@ -29,18 +29,56 @@ const DestinationService = require('./DestinationService');
 const TokenCache = require('./TokenCache');
 
 /**
+ * Person rows that represent the same human, ranked. Lower sorts first.
+ *
+ * ERPUSER is the anchor identity: FSM's own preferred relationship is
+ *   Person[ERPUSER].id = Person[ERPUSER].refId = Person[EMPLOYEE].refId
+ *                      = UnifiedPerson.id = UnifiedPerson.refId
+ * and - verified in this tenant - it is the row FSM itself writes into
+ * `createPerson` on the TimeEfforts it creates. Choosing it keeps our entries
+ * pointing at the same Person FSM Mobile / Web UI point at.
+ *
+ * `id === refId` is the same signal without relying on the type string, and is
+ * the fallback for the day the ERPUSER label stops being the marker.
+ *
+ * @param {Object} row - raw Person / UnifiedPerson row
+ * @returns {number} sort rank
+ */
+function identityRank(row) {
+    const types = Array.isArray(row?.types)
+        ? row.types.map(t => String(t).toUpperCase())
+        : (row?.type ? [String(row.type).toUpperCase()] : []);
+
+    if (types.includes('ERPUSER')) return 0;
+    if (row?.id && row.id === row.refId) return 1;
+    if (types.includes('EMPLOYEE')) return 2;
+    return 3;
+}
+
+/**
  * Build the identity list returned by both person lookup paths.
  *
  * One human can have several Person rows for the same userName (EMPLOYEE +
- * ERPUSER), each with its own id/externalId. All are kept, in the order FSM
- * returned them; callers use the first.
+ * ERPUSER), each with its own id AND its own externalId. All are kept, but they
+ * are ORDERED - not left in whatever order FSM returned them.
+ *
+ * That ordering is the point of this function. Callers take [0] as "the user",
+ * and that value ends up in stored data (the z_TM_PersonID of the user-settings
+ * record). FSM does not promise a row order, so an unsorted [0] is a lottery
+ * that can flip between calls - and a flip writes a SECOND settings record under
+ * the other externalId, silently orphaning the first. Ranking by identityRank
+ * makes [0] the same row every time.
+ *
+ * refId is carried through because it - not id - is the one value FSM guarantees
+ * is identical across every row for one human. It is the right key for "is this
+ * the same person", e.g. when de-duplicating the technician list.
  *
  * displayName is "firstName lastName" - a single space between, and no stray
  * space when only one of the two is filled. It falls back to the externalId so
  * the UI always has something to show.
  *
  * @param {Array<Object>} rows - raw Person / UnifiedPerson rows
- * @returns {Array<{id: string, externalId: string, firstName: string, lastName: string, displayName: string}>}
+ * @returns {Array<{id: string, refId: string|null, type: string|null, externalId: string, firstName: string, lastName: string, displayName: string}>}
  */
 function buildPersonIdentities(rows) {
     const seen = new Set();
@@ -57,14 +95,26 @@ function buildPersonIdentities(rows) {
             .filter(Boolean)
             .join(' ');
 
+        // UnifiedPerson carries `types` (array), Person carries `type` (string).
+        const type = Array.isArray(row.types)
+            ? (row.types[0] || null)
+            : (row.type || null);
+
         persons.push({
             id: row.id,
+            refId: row.refId || null,
+            type: type,
             externalId: row.externalId || null,
             firstName: firstName,
             lastName: lastName,
-            displayName: displayName || row.externalId || ''
+            displayName: displayName || row.externalId || '',
+            _rank: identityRank(row)
         });
     });
+
+    // Stable within a rank: sort only by rank, then drop the helper field.
+    persons.sort((a, b) => a._rank - b._rank);
+    persons.forEach(person => { delete person._rank; });
 
     return persons;
 }
@@ -310,24 +360,78 @@ module.exports = {
     // ========================================
 
     /**
-     * Get all Persons (Technicians).
-     * @returns {Promise<Array<{id: string, externalId: string, firstName: string, lastName: string}>>}
+     * Get all Persons (Technicians), ONE ROW PER HUMAN.
+     *
+     * WHY THE DE-DUPLICATION
+     *   The Person table stores one row per type for the same human - an ERPUSER
+     *   row and an EMPLOYEE row - and each has its own id AND its own externalId
+     *   (e.g. 'egleizds1' and 'egleizds2'). Both pass the externalId filter, so
+     *   the raw query lists every technician twice.
+     *
+     *   That is not only untidy. The picked entry becomes `createPerson` on the
+     *   entry we create, and FSM's own Mobile / Web UI writes the ERPUSER row
+     *   there. Offering the EMPLOYEE duplicate lets a user create entries under
+     *   an identity FSM itself never uses, which then reads differently in FSM
+     *   reporting than an identical entry made in FSM.
+     *
+     *   refId is identical across those rows - it is the only value FSM
+     *   guarantees for that - so it is the de-duplication key, and identityRank
+     *   decides which of the duplicates survives (ERPUSER).
+     *
+     * WHY THE DROPPED ROWS STILL COME BACK AS ALIASES
+     *   Collapsing the rows must not make the dropped identity unfindable. An
+     *   activity's `responsible` or `supportingPersons` may reference the
+     *   EMPLOYEE id or externalId, and the T&M creation dialog looks technicians
+     *   up by exactly those values to build its dropdown and preselect the
+     *   responsible. If only the surviving row's own id/externalId were
+     *   returned, those lookups would miss and the technician would silently
+     *   vanish from the dialog.
+     *
+     *   So every merged row contributes to `ids` and `externalIds`. One entry
+     *   per human in the list, findable under any identity that human has.
+     *
+     * @returns {Promise<Array<{id: string, refId: string|null, type: string|null, externalId: string, ids: string[], externalIds: string[], firstName: string, lastName: string}>>}
      */
     async getPersons() {
         try {
-            const query = `SELECT w.id, w.externalId, w.firstName, w.lastName FROM Person w WHERE w.externalId IS NOT NULL`;
+            const query = `SELECT w.id, w.refId, w.type, w.externalId, w.firstName, w.lastName FROM Person w WHERE w.externalId IS NOT NULL`;
             const data = await this.makeQueryRequest(query, 'Person.25');
 
             if (!data.data || data.data.length === 0) {
                 return [];
             }
 
-            return data.data.map(item => ({
-                id: item.w.id,
-                externalId: item.w.externalId,
-                firstName: item.w.firstName || '',
-                lastName: item.w.lastName || ''
-            }));
+            const rows = data.data.map(item => item.w).filter(Boolean);
+
+            // Group by refId, keeping every row of the group. Rows without a
+            // refId cannot be grouped, so they are keyed by their own id and
+            // form a group of one.
+            const groups = new Map();
+            rows.forEach(row => {
+                if (!row.id) return;
+                const key = row.refId || row.id;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(row);
+            });
+
+            return [...groups.values()].map(group => {
+                const ranked = [...group].sort((a, b) => identityRank(a) - identityRank(b));
+                const primary = ranked[0];
+
+                return {
+                    id: primary.id,
+                    refId: primary.refId || null,
+                    type: primary.type || null,
+                    externalId: primary.externalId,
+                    // Every identity of this human, primary first. Callers match
+                    // against these so a reference to the collapsed row still
+                    // finds the person.
+                    ids: [...new Set(ranked.map(r => r.id).filter(Boolean))],
+                    externalIds: [...new Set(ranked.map(r => r.externalId).filter(Boolean))],
+                    firstName: primary.firstName || '',
+                    lastName: primary.lastName || ''
+                };
+            });
 
         } catch (error) {
             console.error("FSMService: Error fetching persons:", error.message);
@@ -336,28 +440,68 @@ module.exports = {
     },
 
     /**
-     * Get Person by ID.
+     * Run one person lookup against Person, then UnifiedPerson if it finds nothing.
+     *
+     * WHY THE FALLBACK
+     *   SAP is migrating Person -> UnifiedPerson feature by feature, and the
+     *   documentation is explicit that `Person[ERPUSER].id = UnifiedPerson.id`
+     *   must NOT be taken for granted: "at some point of the migration to
+     *   UnifiedPerson, this link will be broken."
+     *
+     *   When that happens for a component that feeds us person ids (an activity's
+     *   responsible or supporting technicians), a Person-only lookup returns
+     *   nothing and the UI falls back to showing a raw UUID. The second query
+     *   only runs on a miss, so the normal path costs nothing.
+     *
+     *   As of today both ids resolve in Person in this tenant - this is
+     *   insurance, not a fix for a current failure.
+     *
+     * @param {string} field - column to match ('id' or 'externalId')
+     * @param {string} value - value to match
+     * @returns {Promise<Object|null>} Person-shaped object or null
+     * @private
+     */
+    async _lookupPerson(field, value) {
+        const shape = row => ({
+            id: row.id,
+            refId: row.refId || null,
+            type: Array.isArray(row.types) ? (row.types[0] || null) : (row.type || null),
+            externalId: row.externalId,
+            firstName: row.firstName || '',
+            lastName: row.lastName || ''
+        });
+
+        const personQuery = `SELECT w.id, w.refId, w.type, w.externalId, w.firstName, w.lastName FROM Person w WHERE w.${field} = '${value}'`;
+        const personData = await this.makeQueryRequest(personQuery, 'Person.25');
+
+        if (personData.data && personData.data.length > 0) {
+            // More than one row can come back for an externalId only if FSM data
+            // is inconsistent; rank anyway so the answer is deterministic.
+            const rows = personData.data.map(r => r.w).filter(Boolean);
+            rows.sort((a, b) => identityRank(a) - identityRank(b));
+            return shape(rows[0]);
+        }
+
+        // `types` here, not `type` - different column name on UnifiedPerson.
+        const unifiedQuery = `SELECT w.id, w.refId, w.types, w.externalId, w.firstName, w.lastName FROM UnifiedPerson w WHERE w.${field} = '${value}'`;
+        const unifiedData = await this.makeQueryRequest(unifiedQuery, 'UnifiedPerson.13');
+
+        if (unifiedData.data && unifiedData.data.length > 0) {
+            return shape(unifiedData.data[0].w);
+        }
+
+        return null;
+    },
+
+    /**
+     * Get Person by ID. Falls back to UnifiedPerson - see _lookupPerson.
      * @param {string} personId - Person ID
      * @returns {Promise<Object|null>} Person object or null
      */
     async getPersonById(personId) {
         try {
             if (!personId) return null;
-
-            const query = `SELECT w.id, w.externalId, w.firstName, w.lastName FROM Person w WHERE w.id = '${personId}'`;
-            const data = await this.makeQueryRequest(query, 'Person.25');
-
-            if (!data.data || data.data.length === 0) {
-                return null;
-            }
-
-            return {
-                id: data.data[0].w.id,
-                externalId: data.data[0].w.externalId,
-                firstName: data.data[0].w.firstName || '',
-                lastName: data.data[0].w.lastName || ''
-            };
-
+            return await this._lookupPerson('id', personId);
         } catch (error) {
             console.error("FSMService: Error fetching person by ID:", error.message);
             return null;
@@ -365,28 +509,14 @@ module.exports = {
     },
 
     /**
-     * Get Person by External ID.
+     * Get Person by External ID. Falls back to UnifiedPerson - see _lookupPerson.
      * @param {string} externalId - Person External ID
      * @returns {Promise<Object|null>} Person object or null
      */
     async getPersonByExternalId(externalId) {
         try {
             if (!externalId) return null;
-
-            const query = `SELECT w.id, w.externalId, w.firstName, w.lastName FROM Person w WHERE w.externalId = '${externalId}'`;
-            const data = await this.makeQueryRequest(query, 'Person.25');
-
-            if (!data.data || data.data.length === 0) {
-                return null;
-            }
-
-            return {
-                id: data.data[0].w.id,
-                externalId: data.data[0].w.externalId,
-                firstName: data.data[0].w.firstName || '',
-                lastName: data.data[0].w.lastName || ''
-            };
-
+            return await this._lookupPerson('externalId', externalId);
         } catch (error) {
             console.error("FSMService: Error fetching person by externalId:", error.message);
             return null;
@@ -530,7 +660,9 @@ module.exports = {
             // firstName/lastName are selected for display only - the app shows
             // "firstName lastName" in the User Settings table while keeping
             // externalId for the PATCH.
-            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM Person w WHERE w.userName = '${userId}'`;
+            // refId + type are selected so the identity rows can be RANKED rather
+            // than taken in FSM's arbitrary order - see buildPersonIdentities.
+            const query = `SELECT w.id, w.refId, w.type, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM Person w WHERE w.userName = '${userId}'`;
             const data = await this.makeQueryRequest(query, 'Person.25');
 
             if (!data.data || data.data.length === 0) {
@@ -540,9 +672,12 @@ module.exports = {
             // Collect every identity row for this userName, not just row 0.
             const rows = data.data.map(r => r.w).filter(Boolean);
 
-            const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
-            const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
+            // Derived from the RANKED list, so [0] is the anchor identity
+            // (ERPUSER) rather than whichever row FSM happened to return first.
             const persons = buildPersonIdentities(rows);
+            const personIds = [...new Set(persons.map(p => p.id).filter(Boolean))];
+            const personExternalIds = [...new Set(persons.map(p => p.externalId).filter(Boolean))];
+            const personRefIds = [...new Set(persons.map(p => p.refId).filter(Boolean))];
 
             // orgLevel is shared across the duplicate rows; take the first
             // populated one rather than assuming row 0 carries it.
@@ -553,6 +688,7 @@ module.exports = {
                 orgLevelIds: orgLevelRow.orgLevelIds || null,
                 personIds,
                 personExternalIds,
+                personRefIds,
                 persons
             };
 
@@ -583,20 +719,23 @@ module.exports = {
             if (!contextUserValue) return null;
 
             // firstName/lastName selected for display, same as the primary path.
-            const query = `SELECT w.id, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM UnifiedPerson w WHERE w.userName = '${contextUserValue}'`;
+            // UnifiedPerson has `types` (array), NOT `type` - selecting w.type
+            // here is an error. refId is present on both.
+            const query = `SELECT w.id, w.refId, w.types, w.externalId, w.orgLevel, w.orgLevelIds, w.firstName, w.lastName FROM UnifiedPerson w WHERE w.userName = '${contextUserValue}'`;
             const data = await this.makeQueryRequest(query, 'UnifiedPerson.13');
 
             if (!data.data || data.data.length === 0) {
                 return null;
             }
 
-            // Collect every identity row (EMPLOYEE + ERPUSER etc.), same as the
-            // primary Person path.
+            // Normally ONE row here - that is the point of UnifiedPerson - but it
+            // goes through the same ranking so both paths return identical shapes.
             const rows = data.data.map(r => r.w).filter(Boolean);
 
-            const personIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
-            const personExternalIds = [...new Set(rows.map(r => r.externalId).filter(Boolean))];
             const persons = buildPersonIdentities(rows);
+            const personIds = [...new Set(persons.map(p => p.id).filter(Boolean))];
+            const personExternalIds = [...new Set(persons.map(p => p.externalId).filter(Boolean))];
+            const personRefIds = [...new Set(persons.map(p => p.refId).filter(Boolean))];
             const orgLevelRow = rows.find(r => r.orgLevel) || rows[0];
 
             return {
@@ -604,6 +743,7 @@ module.exports = {
                 orgLevelIds: orgLevelRow.orgLevelIds || null,
                 personIds,
                 personExternalIds,
+                personRefIds,
                 persons
             };
 
@@ -684,6 +824,8 @@ module.exports = {
                 orgLevelIds: orgLevelData.orgLevelIds,
                 personIds: orgLevelData.personIds || [],
                 personExternalIds: orgLevelData.personExternalIds || [],
+                // Same human across every row; the stable key when one is needed.
+                personRefIds: orgLevelData.personRefIds || [],
                 // Full identity rows: id, externalId, firstName, lastName, displayName.
                 // The UI shows displayName; externalId is what a PATCH writes.
                 persons: persons,
