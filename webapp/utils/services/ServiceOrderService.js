@@ -1,20 +1,22 @@
 /**
  * ServiceOrderService.js
- * 
+ *
  * Frontend service for service order/call data management.
  * Handles fetching and extracting data from FSM composite-tree API responses.
- * 
+ *
  * Key Features:
  * - Fetch service call by ID using composite-tree API
- * - Extract service order header data (ID, subject, business partner, responsible)
+ * - Extract service order header data (ID, subject, business partner, responsible, team)
  * - Extract activities array from composite response
- * 
- * API Endpoint Used:
- * - POST /api/get-activities-by-service-call (uses composite-tree API)
- * 
+ * - Resolve the members of the service call's team (first visibility gate)
+ *
+ * API Endpoints Used:
+ * - POST /api/v1/get-activities-by-service-call (uses composite-tree API)
+ * - POST /api/v1/get-team-persons
+ *
  * Response Structure:
  * The composite-tree API returns service call at ROOT level with nested activities.
- * 
+ *
  * @file ServiceOrderService.js
  * @module com/tns/fsm/timematerialext/app/utils/services/ServiceOrderService
  */
@@ -43,6 +45,48 @@ sap.ui.define([], () => {
         },
 
         /**
+         * Fetch the Person UUIDs in the team assigned to a service call.
+         *
+         * The service call's `team` field is NOT part of the composite-tree
+         * payload, so the backend resolves it with a joined query
+         * (ServiceCall -> team -> TeamTimeFrame -> person) rather than the app
+         * reading it from data it already holds. Keyed on the service call ID,
+         * which the app has in every context.
+         *
+         * An empty array means "nobody" and is returned for a service call with
+         * no team, an empty team, and any failure - so a problem here can only
+         * ever DENY access, never grant it.
+         *
+         * @param {string} serviceCallId - ServiceCall UUID
+         * @returns {Promise<string[]>} Person UUIDs (empty when unresolvable)
+         */
+        async fetchTeamPersons(serviceCallId) {
+            if (!serviceCallId) {
+                return [];
+            }
+
+            try {
+                const response = await fetch("/api/v1/get-team-persons", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ serviceCallId: serviceCallId })
+                });
+
+                if (!response.ok) {
+                    console.error(`ServiceOrderService: team lookup failed (${response.status})`);
+                    return [];
+                }
+
+                const data = await response.json();
+                return Array.isArray(data.persons) ? data.persons : [];
+
+            } catch (error) {
+                console.error("ServiceOrderService: Error fetching team persons:", error);
+                return [];
+            }
+        },
+
+        /**
          * Extract service order data from composite-tree response.
          * In composite-tree API, service call data is at ROOT level.
          * @param {Object} compositeData - Composite tree API response
@@ -52,27 +96,31 @@ sap.ui.define([], () => {
             if (!compositeData) {
                 return null;
             }
-            
+
             // Extract business partner external ID
             let businessPartnerExternalId = null;
             if (compositeData.businessPartner && compositeData.businessPartner.externalId) {
                 businessPartnerExternalId = compositeData.businessPartner.externalId;
             }
-            
+
             // Extract responsible external ID (first responsible if multiple)
             let responsibleExternalId = null;
             if (compositeData.responsibles && compositeData.responsibles.length > 0) {
-                responsibleExternalId = compositeData.responsibles[0].externalId || 
+                responsibleExternalId = compositeData.responsibles[0].externalId ||
                                        compositeData.responsibles[0].code ||
                                        compositeData.responsibles[0].id;
             }
-            
+
             return {
                 id: compositeData.id,
                 externalId: compositeData.externalId || compositeData.code || compositeData.id,
                 subject: compositeData.subject || '',
                 businessPartnerExternalId: businessPartnerExternalId || 'N/A',
                 responsibleExternalId: responsibleExternalId || 'N/A',
+                // NOTE: no team here. The composite-tree payload does NOT carry the
+                // service call's `team` field, so it cannot be read from what the
+                // app already loaded. The visibility gate resolves it from `id`
+                // instead - see fetchTeamPersons.
                 earliestStartDateTime: compositeData.earliestStartDateTime || null,
                 dueDateTime: compositeData.dueDateTime || null
             };
@@ -87,7 +135,7 @@ sap.ui.define([], () => {
             if (!compositeData || !compositeData.activities) {
                 return [];
             }
-            
+
             return compositeData.activities || [];
         }
     };

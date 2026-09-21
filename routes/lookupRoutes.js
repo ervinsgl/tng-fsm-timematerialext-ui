@@ -347,6 +347,48 @@ router.post("/get-approval-status", async (req, res) => {
 
 // Get User's Organization Level by username
 // Flow: username -> User API (get user ID) -> Query Person (get orgLevel)
+/**
+ * Members of the team assigned to a Service Call.
+ *
+ * Body: { serviceCallId: "7C49856F3BE349FE8E80E75786C070B3" }
+ * Response: { success, serviceCallId, persons: ["<person uuid>", ...], count }
+ *
+ * The service call's `team` field is not in the composite-tree payload the app
+ * loads, so the backend resolves ServiceCall -> team -> TeamTimeFrame -> person
+ * in a single joined query. Keyed on the service call ID (not code) because that
+ * is the value the app already holds in every context.
+ *
+ * Used as the FIRST visibility gate: a user who belongs to the service call's
+ * team sees all of its activities. No team, an empty team or a failed lookup all
+ * return an empty list, which means "not a member" - the caller then falls back
+ * to the responsible / supporting-technician check.
+ */
+router.post("/get-team-persons", async (req, res) => {
+    const { serviceCallId } = req.body;
+
+    if (!serviceCallId) {
+        return res.status(400).json({ message: 'serviceCallId is required' });
+    }
+
+    try {
+        const persons = await FSMService.getServiceCallTeamPersons(serviceCallId);
+
+        res.json({
+            success: true,
+            serviceCallId: serviceCallId,
+            persons: persons,
+            count: persons.length
+        });
+
+    } catch (error) {
+        console.error("Error fetching service call team persons:", error.message);
+        res.status(error.response?.status || 500).json({
+            message: error.response?.data?.message || 'Failed to fetch team persons',
+            error: error.response?.data || error.message
+        });
+    }
+});
+
 router.post("/get-user-org-level", async (req, res) => {
     const { username } = req.body;
 

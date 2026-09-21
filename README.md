@@ -72,28 +72,101 @@ needs to be re-written — the paths are dormant, not deleted.
 
 ---
 
-## 👥 Activity Visibility: Organization Level Only
+## 👥 Activity Visibility: Org Level, then Team, then Assignment
 
-**Activities are filtered by organization level and nothing else.** Every user who can
-open the app sees every activity of the service order that matches their organization
-level, whether or not they are its responsible or a supporting technician.
+Visibility is decided in `DataLoadingMixin._loadServiceCallActivities()` in three steps,
+**identically on FSM Mobile and in the FSM Web UI**.
 
-The former **assignment filter** (responsible / supporting technician) was removed from
-`DataLoadingMixin._loadServiceCallActivities()`. Who may open the app at all is
-controlled in **FSM Admin via Policy Groups**, not in the app.
+### Step 1 — Organization level (always)
 
 | Condition | Result |
 |-----------|--------|
 | User has no resolved org level | No activities. Message: *No Organization Level Assigned* |
-| Activity's `orgLevelIds` matches the user's org level | Visible |
+| Activity's `orgLevelIds` matches the user's org level | Continues to step 2 |
 | Activity's org level differs | Hidden, counted in the *activities hidden* toast |
 
-Removing the assignment filter also removed one `ActivityService.fetchActivityTechnicians()`
-call **per activity** from the initial load, so large service orders open noticeably faster.
+> **Exact match, no hierarchy.** The user resolves to exactly **one** org level
+> (`Person.orgLevel`, falling back to the first entry of `Person.orgLevelIds` that exists
+> in the hierarchy), and an activity is compared against that single id. Parents and
+> children are **not** walked: a dispatcher sitting on a parent unit sees none of the
+> activities of the teams beneath it. `OrganizationService._processLevelsRecursive()`
+> flattens the tree into an id → name map and discards `subLevels`, so the parent/child
+> relationship is not even retained. The company root is excluded from that map (the
+> recursion starts at `level.subLevels`), so an object stamped with the root matches nobody.
+>
+> If hierarchy is ever needed, keep `parentId` when caching, resolve the user to a **set**,
+> and expand it downwards.
 
-> `personIds` / `personExternalIds` are still resolved at startup and kept on
-> `/webContainerContext`. They no longer filter anything — they identify the user for
-> [User Settings](#-user-settings-fsm-udo).
+### Step 2 — GATE A: the service call's team
+
+If the logged-in user belongs to the **team on the service call**, they see **every**
+activity of that service order and step 3 is skipped.
+
+The team is resolved server-side, because the `team` field is **not** part of the
+composite-tree payload the app already loads. `FSMService.getServiceCallTeamPersons()`
+joins the two entities in a single query:
+
+```sql
+SELECT v.person FROM ServiceCall m
+JOIN TeamTimeFrame v ON v.team = m.team
+WHERE m.id = '<service call UUID>'
+```
+`dtos=ServiceCall.27;TeamTimeFrame.11`
+
+Keyed on `ServiceCall.id` rather than `.code` — the id is the value the app holds in every
+entry path, and needs no assumption about code formatting or uniqueness. `TeamTimeFrame`
+is one row per person per time frame, so rows are de-duplicated; `validFrom` / `validTo`
+are deliberately **not** evaluated, so a technician whose frame ended does not lose sight
+of the service order they worked on.
+
+### Step 3 — GATE B: per-activity assignment
+
+For a non-member, an activity is visible only if the user is its **responsible** or one of
+its **supporting technicians**.
+
+The composite tree carries `responsibles` but **not** `supportingPersons`, so
+`ActivityService.fetchActivityTechnicians()` is called for the activities that need it
+(five at a time). The two lists are then taken **independently** — tree first, fetch as
+fallback, per list — because an all-or-nothing choice loses whichever one the other source
+held.
+
+> ⚠️ `_hasAssignmentData()` must stay an **AND** of both lists. As an OR, an activity
+> looked fully described from the tree alone, the lookup never ran, and supporting
+> technicians were never checked — a user who was *only* a supporting technician saw an
+> empty list with no error.
+
+### Neither gate matches
+
+No activities, and the empty state says why (`msgNoActivitiesAccessTitle` /
+`msgNoActivitiesAccessDesc`): *neither a member of its team nor assigned to any of them*.
+
+### Failing closed
+
+Every uncertain case denies rather than grants: no service call id, no team, an empty team,
+a failed team lookup, a failed assignment lookup, or an unresolved person identity. A
+problem can only ever hide activities, never reveal them.
+
+### Identity matching
+
+Both gates compare against **every** value the user can be referenced by — `personIds`,
+`personExternalIds` and `personRefIds`, collected by `_getUserIdentityKeys()`. One human
+has several Person rows with different ids *and* different externalIds, and FSM references
+different ones in different places (a `TeamTimeFrame` names a Person id; an activity's
+responsible may carry either). Matching a single identity silently hides everything for
+some users. See [Person identity](#the-person-identity).
+
+### Not a security boundary
+
+The filtering happens in the browser. The backend calls FSM with **OAuth2 client
+credentials** — a technical client with no user identity — so FSM Policy Groups are never
+evaluated, and the `/api/v1/*` routes still serve any authenticated session the full data.
+This is an ergonomic restriction. Making it an actual one means moving both gates into the
+Node layer.
+
+> **Why not FSM Policy Groups?** They govern FSM's own screens. An extension never receives
+> them: in the Web UI the shell can be *asked* (`SHELL_EVENTS.Version3.GET_PERMISSIONS`),
+> but that answer is a UI hint that does not filter query results; in the Mobile Web
+> Container there is no shell at all — see [FSM Mobile Integration](#-fsm-mobile-integration).
 
 ---
 
@@ -104,11 +177,26 @@ Each technician has their own settings record, stored in FSM as the **UDO
 
 ### What the dialog shows
 
-| Section | Content |
-|---------|---------|
-| **Available Settings** | One row per field the UDO can hold, in FSM's own field order. Setting = the field's `description`; Value = a dropdown of its selection list. Pre-filled with what the user saved, falling back to the field's default. |
-| **Your Saved Settings** | The user's own saved record, read-only. Other people's records are filtered out **server-side** and never reach the browser. |
+**One table**, three columns — one row per field the UDO can hold, in FSM's own field order:
+
+| Column | Content |
+|--------|---------|
+| **Setting** | The field's `description` from FSM. |
+| **Value** (editable) | A dropdown of the field's selection list, pre-filled with what the user saved, falling back to the field's default. A `PERSON` field shows the user's name instead of a dropdown. |
+| **Applied** | What is stored in FSM **right now**, resolved to readable text (a selection code shows as its text, a person externalId as the name). An **en dash** means nothing has been saved for that setting — distinguishable from *saved as empty*. |
 | **OK** | Creates the record, or updates the existing one. |
+
+Editable and stored values sit on the **same row**, so "what I am about to save" versus
+"what is saved" is one glance. (This replaced a separate *Your Saved Settings* table below,
+which had to be cross-referenced by eye.)
+
+The stored value is matched to its definition row by UDF `externalId` **and** by meta UUID,
+so a record written before a field was renamed in FSM still lines up. A person value is only
+rendered as the user's name when it is one of *their* identities — a value belonging to
+someone else stays raw rather than being mislabelled.
+
+Only the user's own record is read: other people's are filtered out **server-side** and
+never reach the browser.
 
 ### Nothing about the settings is hardcoded
 
@@ -208,14 +296,54 @@ duplicates. Empty fields are skipped rather than written as `""`.
 at startup — no extra lookup:
 
 ```
-userName → User API (user id) → Person.userName  → id, externalId, firstName, lastName
+userName → User API (user id) → Person.userName  → id, refId, type, externalId, names
                               ↘ fallback: UnifiedPerson.userName
                                 (accounts where Person.userName holds the login name)
 ```
 
 Whichever path answered is the one used. The table shows `firstName lastName`
 (`personDisplayName`) while the model keeps the `externalId` — that is what a save writes.
-A user with several identity rows (EMPLOYEE + ERPUSER) uses the first.
+
+#### One human, several Person rows
+
+FSM stores one `Person` row **per type** for the same human — an `ERPUSER` row and an
+`EMPLOYEE` row — each with its **own id and its own externalId** (e.g. `egleizds1` and
+`egleizds2`), sharing one `refId`. Three consequences, all handled in `FSMLookupService`:
+
+**1. The rows are ranked, never taken in FSM's order.** `identityRank()` prefers `ERPUSER`,
+then `id === refId`, then `EMPLOYEE`. FSM promises no row order, and `[0]` ends up in
+stored data (`z_TM_PersonID`) — an unranked `[0]` is a lottery, and a flip writes a
+**second** settings record under the other externalId, silently orphaning the first.
+
+ERPUSER is the right anchor: it satisfies FSM's documented preferred relationship
+(`Person[ERPUSER].id = refId = UnifiedPerson.id`) and — verified in this tenant — it is the
+row FSM's own Mobile/Web UI writes into `createPerson` on the TimeEfforts it creates, so our
+entries point at the same Person FSM does.
+
+**2. Reads match the whole identity set, not one value.** `findUserSettingRecordForPerson()`
+compares the stored `z_TM_PersonID` against **every** externalId the user resolves to, so a
+record saved under either row is found and updated rather than duplicated. New records are
+still keyed on the primary only. Called with **no** identity, `getUserSettings()` returns
+**no** records — previously it returned everyone's, and the dialog showed a stranger's
+values as the user's own.
+
+**3. The technician list is de-duplicated by `refId`.** `getPersons()` returns one entry per
+human, keeping the ERPUSER row; without it a technician appeared twice and picking the wrong
+one wrote a `createPerson` that FSM's own apps never use. The merged entry carries every
+identity in `ids` / `externalIds`, and `PersonService` caches it under all of them, so a
+lookup by the collapsed identity — which is what an activity's `supportingPersons` often
+names — still resolves.
+
+`getPersonById()` / `getPersonByExternalId()` fall back to `UnifiedPerson` when `Person`
+returns nothing. Both ids resolve in `Person` today; this is insurance against SAP's
+documented warning that the `Person[ERPUSER].id = UnifiedPerson.id` link **will** break
+during the migration.
+
+> ⚠️ **`Person.externalId` is required.** A Person created directly in FSM has
+> `externalId: null` on every row. The org level still resolves (so activities load fine),
+> but `personExternalIds` comes back empty and **User Settings cannot be saved** —
+> *"Your user is not assigned to a person…"*. Set an externalId on the **ERPUSER** row in
+> FSM Admin. See [FSM User Settings UDO](#fsm-user-settings-udo).
 
 ### What the settings control
 
@@ -542,9 +670,9 @@ screenshot stays valid for whenever it is re-enabled. See
 | **Available Settings** | One row per field of the UDO, pre-filled with the user's saved choice or the field default | `TMUserSettingMixin.js` → `_loadUserSettingsIntoModel()` |
 | **Setting column** | The UDF's `description`, resolved from its meta UUID server-side | `FSMUdoService.js` → `buildLabel()` |
 | **Value column** | Dropdown of the UDF's selection list; plain text for other fields (a PERSON field shows `firstName lastName`) | `UserSettingsDialog.fragment.xml` |
+| **Applied column** | What is stored in FSM right now, resolved to readable text. An en dash means nothing saved for that setting. Pops in below the row at phone width. | `TMUserSettingMixin.js` → `savedDisplayValue` |
 | **Saved indicator** | Green ✓ in the header when the user has a saved record | `UserSettingsDialog.fragment.xml` |
-| **Your Saved Settings** | The user's own record, read-only. Other people's records never reach the browser. | `FSMUdoService.js` → `getUserSettings(name, personExternalId)` |
-| **OK** | Creates the record, or updates the existing one | `TMUserSettingMixin.js` → `onSaveUserSetting()` |
+| **OK** | Creates the record, or updates the existing one. Only the user's own record is read — others never reach the browser. | `FSMUdoService.js` → `getUserSettings(name, personExternalIds)` |
 
 ---
 
@@ -563,6 +691,22 @@ screenshot stays valid for whenever it is re-enabled. See
 - Tablet: 2 columns, wrapped toolbars (601px–1024px)
 - Mobile: 1 column, full-width dialogs (<600px)
 - Extra small: hidden ID labels (<400px)
+
+**The collapsed activity header sheds content in three tiers.** A long subject used to wrap
+into a tall tower and push the T&M summary out of view:
+
+| Width | Header shows |
+|-------|--------------|
+| > 600px | ID + subject (clamped to two lines, full text in the tooltip) + summary with labels |
+| ≤ 600px | ID + bare summary numbers. The subject moves into the expanded detail (`.activityDetailSubject`), centred and padded to the panel gutter, so it is never lost |
+| ≤ 400px | ID only (`.activityHeaderSummary` hidden) — below this the numbers were cut off mid-word and squeezed the ID into an ellipsis. The summary is still there once the panel is expanded |
+
+> The subject clamp relies on `display: -webkit-box` + `-webkit-box-orient: vertical`;
+> removing either breaks `-webkit-line-clamp`. The standard `line-clamp` is declared
+> alongside it for forward compatibility.
+>
+> Every control of the collapsed summary carries the `activityHeaderSummary` class so one
+> rule hides the whole group — add the class to anything new put there.
 
 ---
 
@@ -723,11 +867,12 @@ validator safety properties, threat model, and rotation procedures), see
 | Component | Description |
 |-----------|-------------|
 | **Session Context Dialog** | Opened from footer toolbar (ℹ️ button). Shows User, Language, Account, Company, Organization, Object Type/ID. |
-| **User Settings Dialog** | Opened from footer toolbar (⚙️ button). Per-user settings stored in FSM (UDO `TMExt_UserSettings`). |
+| **User Settings Dialog** | Opened from footer toolbar (⚙️ button). Per-user settings stored in FSM (UDO `TMExt_UserSettings`). One table: Setting / Value (editable) / Applied. |
 | **Service Order Panel** | Expandable panel showing Service Order details (ID, External ID, Subject, Business Partner, Responsible, Dates) |
 | **Organization Level** | Auto-resolved from logged-in user (no manual selection required) |
 | **Product Groups** | Activities grouped by Product Description with activity count |
 | **Activity Panels** | Expandable panels with context highlighting (blue border for entry activity), Address, Responsible, Org Level, Service Product, T&M Summary |
+| **Activity Header** | Sheds content as the screen narrows — see [Breakpoints](#9-mobile-responsive-view). IDs are shown bare, without an `ID:` prefix: position and styling already say what they are. |
 | **T&M Summary** | Material qty (reported/planned) and Arbeitszeit/Fahrzeit/Wartezeit hours, each coloured by the statuses behind it |
 | **T&M Tables** | Inline tables per activity: Time/Material (combined with type filter), Expense, Mileage — with edit, delete, sort, approval status, row highlighting |
 | **T&M Creation Dialog** | Create new T&M entries based on Activity Service Product type |
@@ -891,6 +1036,7 @@ The User Settings dialog reads and writes a **User Defined Object**:
 |---------|-------|-------|
 | **UDO name** | FSM Admin → Custom Objects | `TMExt_UserSettings` |
 | **Person field** | a UDF on that UDO | `z_TM_PersonID` — holds the technician's Person externalId |
+| **Person externalId** | FSM Admin → the user's **ERPUSER** `Person` row | **Required.** With `externalId: null` the settings dialog cannot save — see [The person identity](#the-person-identity). Activities still load, so the gap only shows up on save. |
 | **Date field** | a UDF on that UDO | `z_TM_DateType` — selection list `{ "1": "Current date", "2": "Dispo date" }` |
 
 Adding further UDFs needs **no app change** — they appear in the dialog automatically. To
@@ -1206,10 +1352,26 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
 4. Fill required fields and click **Save All**
 5. Dialog closes, entries created in FSM, and inline T&M table refreshes automatically
 
+**Validated before anything is sent** (`TMSaveMixin.onSaveAllCreateTM`):
+
+| Rule | Message |
+|------|---------|
+| No future `entryDate` / `repeatEndDate` | `msgFutureDateNotAllowed`, listing the faulty entries |
+| Every time entry has a task | `msgSelectTaskForAllEntries` |
+| Every time entry has a technician | `msgSelectTechnicianForAllEntries` |
+| Every time entry has a duration **greater than 0** | `msgDurationRequired`, listing the faulty entries |
+
+Each missing field contributes **one complete translated sentence**. An earlier version
+concatenated the literal words `"task"` / `"technician"` with `" and "`, which stayed
+English in the German UI and could not be made grammatical there anyway.
+
 ### T&M Edit Flow:
 1. Click **"Edit Selected"** on a T&M table to enable inline edit mode for selected rows
 2. Modify values directly in the table
 3. Click **Save All** — batch-updates all edited entries via `/api/v1/batch-update`
+
+The same **duration > 0** rule applies here (`TMTableMixin.onSaveAllTM`), for edited
+**Time Effort** rows only.
 
 ### T&M Delete Flow:
 1. Select rows via checkbox — entries in **PENDING** or **CHANGE** status are selectable
@@ -1218,9 +1380,9 @@ npm run start:dev      # Start Fiori tools dev server (frontend only, no backend
 
 ### User Settings Flow:
 1. Click the **⚙️** button in the footer toolbar
-2. *Available Settings* shows every setting, pre-filled with the user's saved choice (or the default)
+2. The table shows every setting: **Value** pre-filled with the user's saved choice (or the default), **Applied** showing what is stored in FSM right now
 3. Change a value and press **OK** — the record is created, or the existing one updated
-4. *Your Saved Settings* below reflects the result
+4. The **Applied** column re-reads and reflects the result on the same row
 
 ---
 
@@ -1313,13 +1475,14 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 #### User & Organization
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/get-user-org-level` | Resolve user's organization level and person identity (id, externalId, firstName, lastName) |
+| POST | `/api/v1/get-user-org-level` | Resolve user's organization level and person identity. Returns `personIds`, `personExternalIds`, `personRefIds` and the ranked `persons[]` (id, refId, type, externalId, names). |
 | GET | `/api/v1/get-organization-levels-full` | Fetch full organization hierarchy |
+| POST | `/api/v1/get-team-persons` | Members of the team on a service call. Body `{ serviceCallId }`; joins `ServiceCall` → `TeamTimeFrame` in one query. Empty list = no team, empty team, or lookup failure — all read as *not a member*. |
 
 #### User Settings
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/get-user-settings` | UDO definition + records. `?personExternalId=…` restricts records to that person's own record (zero or one). |
+| GET | `/api/v1/get-user-settings` | UDO definition + records. `?personExternalIds=a,b` restricts records to that person's own record (zero or one). A **list**, because one human has one externalId per Person row and the record may sit under either; singular `?personExternalId=` still accepted. With **no** identity, returns **no** records. |
 | POST | `/api/v1/save-user-setting` | Create or update one person's settings record. Body: `{ personExternalId, values: [ { externalId, value } ] }` |
 
 #### T&M Data
@@ -1383,7 +1546,7 @@ All `/api/v1/*` routes require an authenticated session — supplied via either 
 | **Data API v4** | `/api/data/v4/UdoValue` | User settings create/update (by id, or by externalId with `forceUpdate=true`) |
 | **Data API v4** | `/api/data/v4/TimeTask` | Time task lookup |
 | **Data API v4** | `/api/data/v4/ExpenseType` | Expense type lookup |
-| **Query API v1** | `/api/query/v1` | TimeEffort, Material, Expense, Mileage, Item, UdfMeta, UdoMeta, UdoValue, Person, UnifiedPerson, BusinessPartner, Approval queries |
+| **Query API v1** | `/api/query/v1` | TimeEffort, Material, Expense, Mileage, Item, UdfMeta, UdoMeta, UdoValue, Person, UnifiedPerson, BusinessPartner, Approval queries, and the `ServiceCall`⋈`TeamTimeFrame` join for team membership (`dtos=ServiceCall.27;TeamTimeFrame.11`) |
 | **Batch API v1** | `/api/data/batch/v1` | Batch create/update/delete operations |
 | **Service Management v2** | `/api/service-management/v2/composite-tree` | Service call with activities |
 | **User API** | `/api/user` | User data lookup (for org level and person resolution) |
@@ -1637,9 +1800,14 @@ cf logs com.tns.fsm.timematerialext.app --recent
 | Server crashes immediately on startup with `FATAL: FSM_WEBCONTAINER_AUTH_KEY environment variable is not set` | Required env var missing | `cf set-env com.tns.fsm.timematerialext.app FSM_WEBCONTAINER_AUTH_KEY '<value>'` then `cf restage`. Locally: `export FSM_WEBCONTAINER_AUTH_KEY='...'` before `npm start`. |
 | Mobile launch returns 401 (`WC-ACCESS-POINT: rejected POST — authenticationKey mismatch`) | FSM Admin Authentication Key doesn't match the env var | Both values must match byte-exactly. |
 | Web UI extension launches but all data is missing / 401s | Shell session init or JWKS validation failed | Check `cf logs` for `SHELL-INIT: rejected`. Verify `FSM_JWKS_URL` for non-DE regions. |
-| No activities shown | No EXECUTION/CLOSED/CANCELLED activities, or the user's org level doesn't match any | Check activity execution stages and org level assignments in FSM. The app no longer filters by responsible/supporting technician. |
+| No activities shown | No EXECUTION/CLOSED/CANCELLED activities, or the org level doesn't match | Check activity execution stages and org level assignments in FSM. Remember the org match is **exact** — a user on a parent unit sees nothing from the teams below it. |
+| **"No Activities for You"** although activities exist | Neither visibility gate matched: the user is not in the service call's team *and* is not responsible / supporting on any activity | Add them to the team on the service call, or assign them on the activity. A failed team or assignment lookup produces the same outcome by design (fails closed). |
+| A user is a **supporting technician** but still sees nothing | `_hasAssignmentData()` reverted to an **OR** | It must be an **AND** of `responsibles` *and* `supportingPersons`. The composite tree carries only the former, so an OR skips the lookup and never checks supporting technicians. |
+| Team membership ignored | The service call has no team, or the join returned nothing | Verify `ServiceCall.team` is set, and that `TeamTimeFrame` rows exist for it. A missing team is not an error — it simply falls through to the assignment gate. |
 | "No Organization Level Assigned" | User's Person record has no `orgLevelIds` | Assign an org level to the Person in FSM. |
 | **PersonID blank in User Settings** | The user resolved but their Person has no External ID, or `KNOWN_FIELD_CONFIG` does not match the UDF | Check the Person's External ID field in FSM. If it is filled, compare the UDF's `externalId` against the `z_TM_PersonID` key in `utils/FSMUdoService.js` — a mismatch is logged as a warning. |
+| **"Your user is not assigned to a person, settings cannot be saved"** | Every `Person` row of that user has `externalId: null`, so `personExternalIds` is empty. The org level still resolves, so activities load normally and the gap only shows on save. | Set an **externalId on the ERPUSER row** in FSM Admin. Check `POST /api/v1/get-user-org-level` in devtools: `personIds` populated but `personExternalIds: []` confirms it. Every user needs one. |
+| **Two settings records for one user** | Written before the identity rows were ranked, under different externalIds | The app now finds a record under **any** of the user's externalIds and updates the older one in place. Delete the orphan `UdoValue` by hand. |
 | **DateType has no preselection** | The UDF has no `defaultValue` in FSM and no `defaultCode` in `KNOWN_FIELD_CONFIG` | Set `defaultValue` on the UDF in FSM Admin (recommended), or add `defaultCode` to the config entry. |
 | **New entries dated to the planned start although "Current date" is set** | Settings could not be read, so the app fell back | Open User Settings — if it shows an error strip, the read failed. The fallback is deliberate. |
 | **User Settings shows "no user settings created"** | The person has no record yet | Press OK to create one. Records belonging to other people are never shown. |
@@ -1647,6 +1815,7 @@ cf logs com.tns.fsm.timematerialext.app --recent
 | Summary metric is grey although entries exist | Every entry of that type is REJECTED, so it is excluded | Expected — REJECTED entries never count toward the summary. |
 | Add Entry button not visible | Activity is cancelled/closed or read-only | Button hidden when `isReadOnly` is true |
 | Delete Selected toast says "0 entries deleted" but entries are gone | Multipart batch response parser drops bodyless 204 responses | Cosmetic — entries are actually deleted. Refresh to confirm. |
+| **`CA-09: Could not deserialize ... [TimeEffortDTO_V17]`** | A time entry was sent with a **zero** (or `NaN`) duration | Both save paths now block this before submitting. If it still appears, check `_toDurationMinutes()` — a decimal comma (`"0,50"`) used to become `NaN` via `parseFloat`. The code is mapped to `msgDurationRequired` so the failure list reads sensibly. |
 | `[FUTURE FATAL] ... templateShareable` | An aggregation binding lacks `templateShareable` | Every binding inside another binding's template must declare `templateShareable: false`. |
 | `[FUTURE FATAL] ... 'onInit' must not have a return value` | `onInit` declared as `async` | Make `onInit` synchronous; delegate async work to `_initializeAsync`. |
 | Web UI works first time, then 401s after idle | Session token expired (30 min TTL) or container restarted | Refresh the iframe; the Shell SDK re-issues a JWT. |
@@ -1727,16 +1896,19 @@ FSMJwtValidator: using JWKS endpoint https://de.fsm.cloud.sap/...
 - Full documentation in [docs/SECURITY.md](docs/SECURITY.md)
 
 **Organization, Person & Visibility:**
-- Organization level auto-resolution from logged-in user
-- Person identity resolution (id, externalId, firstName, lastName) via Person with UnifiedPerson fallback
-- **Activity visibility by organization level only** — assignment filtering removed, access governed by FSM Policy Groups
+- Organization level auto-resolution from logged-in user (exact single-node match, no hierarchy walk)
+- Person identity resolution via Person with UnifiedPerson fallback — rows **ranked** (ERPUSER first) so the primary identity is stable, with `refId` carried through
+- Identity matching against the **whole** key set (`personIds` + `personExternalIds` + `personRefIds`)
+- Technician list de-duplicated by `refId`, findable under any of that human's ids
+- **Activity visibility**: org level → team on the service call (`TeamTimeFrame`) → per-activity responsible / supporting technician, on **both** Mobile and Web UI, failing closed throughout
 - Service Order panel, activities grouped by Product Description
 - Context activity highlighting
 
 **User Settings (FSM UDO `TMExt_UserSettings`):**
 - Read: definition + the user's own record, in a fixed 3 queries
-- Write: create or update via `PATCH`, decided by looking the person up first
-- Records of other users filtered out server-side
+- Write: create or update via `PATCH`, decided by looking the person up first — matched against **every** identity of the user, so a record never duplicates
+- Records of other users filtered out server-side; **no identity returns no records**
+- Single table with an **Applied** column showing what is stored in FSM right now
 - Field labels, dropdown options and defaults driven entirely by FSM metadata
 - **DateType** controls the default date of every new T&M entry
 - Preselection of the user's saved choice, with the field default as fallback

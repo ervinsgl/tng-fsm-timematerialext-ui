@@ -1,9 +1,9 @@
 /**
  * TMSaveMixin.js
- * 
+ *
  * Mixin for saving all T&M entries (Material + Time).
  * Handles multi-technician and repeat date expansion.
- * 
+ *
  * @file TMSaveMixin.js
  * @module com/tns/fsm/timematerialext/app/controller/mixin/TMSaveMixin
  */
@@ -32,19 +32,25 @@ sap.ui.define([
             const aTimeEntriesAZ = oModel.getProperty("/timeEntriesAZ") || [];
             const aTimeEntriesFZ = oModel.getProperty("/timeEntriesFZ") || [];
             const aTimeEntriesWZ = oModel.getProperty("/timeEntriesWZ") || [];
-            
-            const totalEntries = aMaterialEntries.length + aTimeEntriesAZ.length + 
+
+            const totalEntries = aMaterialEntries.length + aTimeEntriesAZ.length +
                                  aTimeEntriesFZ.length + aTimeEntriesWZ.length;
-            
+
             if (totalEntries === 0) {
                 MessageToast.show(this._getText("msgNoEntriesToSave"));
                 return;
             }
-            
-            // Validate entries
-            let hasErrors = false;
-            let errorMessages = [];
-            
+
+            // Validate entries.
+            //
+            // Missing fields are collected as i18n KEYS, not as words. The former
+            // version pushed the literal strings "task" / "technician" and glued
+            // them into a sentence with " and " - which stayed English in the
+            // German UI, and could not be made grammatical in German anyway
+            // ("eine Aufgabe" and "einen Techniker" decline differently). Each
+            // missing field now contributes one complete, translated sentence.
+            const missingFieldKeys = new Set();
+
             // Validate no future dates across all entries — blocks everything if any entry is faulty
             const allTimeEntries = [...aTimeEntriesAZ, ...aTimeEntriesFZ, ...aTimeEntriesWZ];
             const allEntries = [...aMaterialEntries, ...allTimeEntries];
@@ -54,24 +60,53 @@ sap.ui.define([
                 return `${this._getText("msgEntryNumber")} ${index + 1} (${type}${desc ? " - " + desc : ""})`;
             })) return;
 
-            allTimeEntries.forEach(entry => {
+            // Entries whose duration would be sent as 0 minutes — collected with a
+            // label so the message can say WHICH ones, like the future-date check.
+            const aZeroDuration = [];
+
+            allTimeEntries.forEach((entry, index) => {
                 if (!entry.taskCode) {
-                    hasErrors = true;
-                    errorMessages.push("task");
+                    missingFieldKeys.add("msgSelectTaskForAllEntries");
                 }
                 const selectedTechs = entry.selectedTechnicians || [];
                 if (selectedTechs.length === 0) {
-                    hasErrors = true;
-                    errorMessages.push("technician");
+                    missingFieldKeys.add("msgSelectTechnicianForAllEntries");
+                }
+
+                // Duration must be greater than zero.
+                //
+                // Checked on the MINUTES that will actually be sent, not on
+                // durationHrs itself: _submitCreateTMEntries rounds hours to whole
+                // minutes, so a value like 0.004 h is truthy but still becomes 0.
+                //
+                // FSM rejects a zero duration with CA-09 ("Could not deserialize
+                // uploaded object to [TimeEffortDTO_V17]"), which tells the user
+                // nothing about what is actually wrong - hence catching it here,
+                // alongside the task and technician checks.
+                if (!(this._toDurationMinutes(entry.durationHrs) > 0)) {
+                    const desc = entry.taskDisplay || entry.technicianDisplay || "";
+                    aZeroDuration.push(
+                        `${this._getText("msgEntryNumber")} ${index + 1}${desc ? " (" + desc + ")" : ""}`
+                    );
                 }
             });
-            
-            if (hasErrors) {
-                const uniqueErrors = [...new Set(errorMessages)];
-                MessageBox.warning(this._getText("msgSelectTaskAndTechnician", [uniqueErrors.join(' and ')]));
+
+            if (missingFieldKeys.size > 0) {
+                // One line per missing field - each already a full sentence in the
+                // active language, so nothing has to be concatenated grammatically.
+                MessageBox.warning(
+                    [...missingFieldKeys].map(sKey => this._getText(sKey)).join('\n')
+                );
                 return;
             }
-            
+
+            if (aZeroDuration.length > 0) {
+                MessageBox.warning(
+                    `${this._getText("msgDurationRequired")}\n\n${aZeroDuration.join('\n')}`
+                );
+                return;
+            }
+
             // Calculate total API calls (technicians × dates)
             const countEntriesWithTechniciansAndRepeats = (entries) => {
                 return entries.reduce((sum, e) => {
@@ -84,22 +119,22 @@ sap.ui.define([
                     return sum + (techCount * dateCount);
                 }, 0);
             };
-            
-            const totalAPIEntries = aMaterialEntries.length + 
-                countEntriesWithTechniciansAndRepeats(aTimeEntriesAZ) + 
-                countEntriesWithTechniciansAndRepeats(aTimeEntriesFZ) + 
+
+            const totalAPIEntries = aMaterialEntries.length +
+                countEntriesWithTechniciansAndRepeats(aTimeEntriesAZ) +
+                countEntriesWithTechniciansAndRepeats(aTimeEntriesFZ) +
                 countEntriesWithTechniciansAndRepeats(aTimeEntriesWZ);
-            
+
             // Build preview
             const lines = [];
-            
+
             if (aMaterialEntries.length > 0) {
                 lines.push(this._getText("previewMaterials", [aMaterialEntries.length]));
                 aMaterialEntries.forEach((e, i) => {
                     lines.push(`  ${i + 1}. ${e.itemDisplay || 'N/A'} - ${this._getText("previewQty")} ${e.quantity}`);
                 });
             }
-            
+
             if (aTimeEntriesAZ.length > 0) {
                 const azCount = countEntriesWithTechniciansAndRepeats(aTimeEntriesAZ);
                 lines.push(`\n${this._getText("previewArbeitszeitSection", [azCount])}`);
@@ -115,7 +150,7 @@ sap.ui.define([
                     lines.push(`  ${i + 1}. ${taskName} - ${e.durationHrs} ${this._getText("unitHours")}${techNote}${repeatNote}`);
                 });
             }
-            
+
             if (aTimeEntriesFZ.length > 0) {
                 const fzCount = countEntriesWithTechniciansAndRepeats(aTimeEntriesFZ);
                 lines.push(`\n${this._getText("previewFahrzeitSection", [fzCount])}`);
@@ -131,7 +166,7 @@ sap.ui.define([
                     lines.push(`  ${i + 1}. ${taskName} - ${e.durationHrs} ${this._getText("unitHours")}${techNote}${repeatNote}`);
                 });
             }
-            
+
             if (aTimeEntriesWZ.length > 0) {
                 const wzCount = countEntriesWithTechniciansAndRepeats(aTimeEntriesWZ);
                 lines.push(`\n${this._getText("previewWartezeitSection", [wzCount])}`);
@@ -147,7 +182,7 @@ sap.ui.define([
                     lines.push(`  ${i + 1}. ${taskName} - ${e.durationHrs} ${this._getText("unitHours")}${techNote}${repeatNote}`);
                 });
             }
-            
+
             MessageBox.confirm(
                 this._getText("msgConfirmCreateTM", [totalAPIEntries, lines.join('\n')]),
                 {
@@ -159,6 +194,32 @@ sap.ui.define([
                     }
                 }
             );
+        },
+
+        /**
+         * Convert a duration in hours into the whole minutes FSM is sent.
+         *
+         * Single source of truth: the validation in onSaveAllCreateTM and the
+         * payload built in _submitCreateTMEntries MUST agree, otherwise an entry
+         * can pass validation and still be sent as 0.
+         *
+         * Accepts a decimal comma as well as a point - a DE locale DatePicker /
+         * input can hand us "0,50", and `parseFloat("0,50") * 60` would otherwise
+         * silently produce 0 (parseFloat stops at the comma).
+         *
+         * @param {string|number} durationHrs - duration in hours, as typed or bound
+         * @returns {number} whole minutes, 0 when missing, unparseable or <= 0
+         * @private
+         */
+        _toDurationMinutes(durationHrs) {
+            if (durationHrs === null || durationHrs === undefined || durationHrs === "") {
+                return 0;
+            }
+            const hours = parseFloat(String(durationHrs).trim().replace(',', '.'));
+            if (!isFinite(hours) || hours <= 0) {
+                return 0;
+            }
+            return Math.round(hours * 60);
         },
 
         /**
@@ -179,10 +240,10 @@ sap.ui.define([
         async _submitCreateTMEntries(aMaterialEntries, aTimeEntriesAZ, aTimeEntriesFZ, aTimeEntriesWZ, oModel) {
             try {
                 sap.ui.core.BusyIndicator.show(0);
-                
+
                 const activityId = oModel.getProperty("/activityId");
                 const orgLevelId = oModel.getProperty("/orgLevelId");
-                
+
                 // Helper to expand entries with multiple technicians AND repeat dates.
                 // Every resulting row is independent: its time block always starts at the
                 // planned start time-of-day on its own date and lasts its own duration.
@@ -191,13 +252,13 @@ sap.ui.define([
                     const expanded = [];
                     (entries || []).forEach(entry => {
                         const selectedTechnicians = entry.selectedTechnicians || [];
-                        
+
                         // Generate date range if repeat enabled
                         let datesToProcess = [entry.entryDate];
                         if (entry.repeatEnabled && entry.repeatEndDate && entry.entryDate) {
                             datesToProcess = this._generateDateRange(entry.entryDate, entry.repeatEndDate);
                         }
-                        
+
                         if (selectedTechnicians.length > 0) {
                             // One entry per technician per date
                             datesToProcess.forEach(dateStr => {
@@ -215,9 +276,9 @@ sap.ui.define([
                             });
                         } else if (entry.technicianExternalId) {
                             datesToProcess.forEach(dateStr => {
-                                expanded.push({ 
-                                    ...entry, 
-                                    typeOrder, 
+                                expanded.push({
+                                    ...entry,
+                                    typeOrder,
                                     timeType,
                                     entryDate: dateStr
                                 });
@@ -226,14 +287,14 @@ sap.ui.define([
                     });
                     return expanded;
                 };
-                
+
                 // Combine all time entries
                 const allTimeEntries = [
                     ...expandMultiTechnicianEntries(aTimeEntriesAZ, 1, 'AZ'),
                     ...expandMultiTechnicianEntries(aTimeEntriesFZ, 2, 'FZ'),
                     ...expandMultiTechnicianEntries(aTimeEntriesWZ, 3, 'WZ')
                 ];
-                
+
                 // Sort by date, then type order (AZ, FZ, WZ) for a tidy batch order.
                 allTimeEntries.sort((a, b) => {
                     const dateA = TMPayloadService._normalizeDate(a.entryDate) || a.entryDate || '';
@@ -241,10 +302,10 @@ sap.ui.define([
                     if (dateA !== dateB) return dateA.localeCompare(dateB);
                     return a.typeOrder - b.typeOrder;
                 });
-                
+
                 // Build batch entries array
                 const batchEntries = [];
-                
+
                 // Add Material entries
                 for (const entry of aMaterialEntries) {
                     batchEntries.push({
@@ -262,7 +323,7 @@ sap.ui.define([
                         }, activityId, orgLevelId)
                     });
                 }
-                
+
                 // Build Time Effort entries — every entry starts at 00:01 on its own date.
                 //
                 // Why 00:01 (and not the planned start time): FSM stores each time effort
@@ -285,7 +346,16 @@ sap.ui.define([
                     const fallbackDate = (oModel.getProperty("/plannedStartDate") || new Date().toISOString()).split('T')[0];
                     const rawDate = entry.entryDate || fallbackDate;
                     const entryDateStr = TMPayloadService._normalizeDate(rawDate) || fallbackDate;
-                    const durationMinutes = Math.round((entry.durationHrs || 0) * 60);
+                    // Same helper the validation used, so what was validated is what is sent.
+                    const durationMinutes = this._toDurationMinutes(entry.durationHrs);
+
+                    // Belt and braces: onSaveAllCreateTM already blocks these, but a zero
+                    // duration is rejected by FSM with an opaque CA-09 deserialization
+                    // error, so never let one reach the batch.
+                    if (durationMinutes <= 0) {
+                        console.warn("TMSaveMixin: skipping time entry with zero duration", entry);
+                        continue;
+                    }
 
                     // Start = 00:01 company-local time on the entry's date, as a UTC instant.
                     const startTime = this._localToUtc(entryDateStr, 0, 1);
@@ -303,13 +373,13 @@ sap.ui.define([
                         }, activityId, orgLevelId)
                     });
                 }
-                
+
                 // Skip if no entries to create
                 if (batchEntries.length === 0) {
                     MessageToast.show(this._getText("msgNoEntriesToCreate"));
                     return;
                 }
-                
+
                 // Chunk the batch so no single request exceeds body-size limits
                 // (Express body-parser, approuter, CF router, corporate proxy).
                 // Chunks are sent sequentially; a failed chunk does NOT abort the
@@ -452,11 +522,11 @@ sap.ui.define([
             try {
                 const oViewModel = this.getView().getModel("view");
                 if (!oViewModel) return;
-                
+
                 // Find the activity path in the model
                 const productGroups = oViewModel.getProperty("/productGroups") || [];
                 let activityPath = null;
-                
+
                 for (let gi = 0; gi < productGroups.length; gi++) {
                     const activities = productGroups[gi].activities || [];
                     for (let ai = 0; ai < activities.length; ai++) {
@@ -467,26 +537,26 @@ sap.ui.define([
                     }
                     if (activityPath) break;
                 }
-                
+
                 if (!activityPath) {
                     console.warn("Activity not found in model:", activityId);
                     return;
                 }
-                
+
                 // Load fresh T&M data using TMDataService
                 const tmData = await TMDataService.loadTMReports(activityId);
-                
+
                 // Enrich reports with display names
                 if (tmData.reports && tmData.reports.length > 0) {
                     await this._enrichTMReports(tmData.reports);
                 }
-                
+
                 // Update model using TMDataService method
                 TMDataService.updateActivityWithTMData(oViewModel, activityPath, tmData);
-                
+
                 // Recalculate all counts (activity + product group totals)
                 this._updateTMCounts(oViewModel);
-                
+
                 console.log("T&M reports refreshed for activity:", activityId, "Count:", tmData.totalCount);
             } catch (error) {
                 console.error("Error refreshing T&M reports:", error);
@@ -609,6 +679,11 @@ sap.ui.define([
         _batchErrorI18nKey(sCode) {
             switch (sCode) {
                 case "CA-238": return "msgErrFutureDate";
+                // CA-09 is FSM's generic "could not deserialize" for a malformed
+                // TimeEffortDTO. In practice the app only produces it with a zero
+                // duration, which onSaveAllCreateTM now blocks before submitting -
+                // so this mapping is a safety net for anything that slips past.
+                case "CA-09": return "msgDurationRequired";
                 default: return null;
             }
         },

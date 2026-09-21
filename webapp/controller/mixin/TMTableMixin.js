@@ -1,9 +1,9 @@
 /**
  * TMTableMixin.js
- * 
+ *
  * Mixin for T&M table view handlers.
  * Handles filtering, sorting, edit selected, and save all operations.
- * 
+ *
  * @file TMTableMixin.js
  * @module com/tns/fsm/timematerialext/app/controller/mixin/TMTableMixin
  */
@@ -53,18 +53,18 @@ sap.ui.define([
         _addTimeEffort(oEvent, sType, sArrayProperty) {
             const oButton = oEvent.getSource();
             const oContext = oButton.getBindingContext("createTM");
-            
+
             if (!oContext) {
                 MessageToast.show(this._getText("msgEntryContextNotAvailable"));
                 return;
             }
-            
+
             const sPath = oContext.getPath();
             const oModel = this._tmCreateDialog.getModel("createTM");
             const oEntry = oModel.getProperty(sPath);
-            
+
             const aTimeEfforts = oEntry[sArrayProperty] || [];
-            
+
             const newTimeEffort = {
                 id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 type: sType,
@@ -76,35 +76,35 @@ sap.ui.define([
                 technicianDisplay: oEntry.technicianDisplay || "",
                 remarks: ""
             };
-            
+
             aTimeEfforts.push(newTimeEffort);
             oModel.setProperty(sPath + "/" + sArrayProperty, aTimeEfforts);
-            
+
             MessageToast.show(this._getText("msgTimeEffortAdded", [sType]));
         },
 
         _removeTimeEffort(oEvent, sArrayProperty) {
             const oButton = oEvent.getSource();
             const oContext = oButton.getBindingContext("createTM");
-            
+
             if (!oContext) {
                 MessageToast.show(this._getText("msgEntryContextNotAvailable"));
                 return;
             }
-            
+
             const sPath = oContext.getPath();
             const oModel = this._tmCreateDialog.getModel("createTM");
-            
+
             const match = sPath.match(/(\/entries\/\d+)\/(\w+)\/(\d+)/);
             if (match) {
                 const sEntryPath = match[1];
                 const sProperty = match[2];
                 const iIndex = parseInt(match[3]);
-                
+
                 const aTimeEfforts = oModel.getProperty(sEntryPath + "/" + sProperty) || [];
                 aTimeEfforts.splice(iIndex, 1);
                 oModel.setProperty(sEntryPath + "/" + sProperty, aTimeEfforts);
-                
+
                 MessageToast.show(this._getText("msgTimeEffortRemoved"));
             }
         },
@@ -121,9 +121,9 @@ sap.ui.define([
         _getTableFromToolbarControl(oControl) {
             const oToolbar = oControl.getParent();
             const oPanel = oToolbar ? oToolbar.getParent() : null;
-            
+
             if (!oPanel || !oPanel.getContent) return null;
-            
+
             const aContent = oPanel.getContent();
             // Handle ScrollContainer wrapper - table may be direct child or inside ScrollContainer
             let oTable = aContent && aContent.length > 0 ? aContent[0] : null;
@@ -132,7 +132,7 @@ sap.ui.define([
                 const aScrollContent = oTable.getContent();
                 oTable = aScrollContent && aScrollContent.length > 0 ? aScrollContent[0] : null;
             }
-            
+
             return oTable;
         },
 
@@ -163,12 +163,12 @@ sap.ui.define([
         _getEditModeProperty(oTable) {
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return "tmEditMode";
-            
+
             const aContexts = oBinding.getContexts();
             if (aContexts.length > 0) {
                 const firstItem = aContexts[0].getObject();
                 const type = firstItem?.type;
-                
+
                 if (type === "Expense" || type === "Expense Report") {
                     return "expenseEditMode";
                 } else if (type === "Mileage") {
@@ -189,13 +189,13 @@ sap.ui.define([
         onTMTypeFilterChange(oEvent) {
             const sKey = oEvent.getParameter("item").getKey();
             const oButton = oEvent.getSource();
-            
+
             const oTable = this._getTableFromToolbarControl(oButton);
             if (!oTable || !oTable.getBinding) return;
-            
+
             // Store sub-filter key so it survives dialog-based filter changes
             oTable.data("typeSubFilter", sKey);
-            
+
             // Re-apply all filters (base type + sub-filter + user filters)
             this._applyTableFilters(oTable, "TM");
         },
@@ -246,15 +246,15 @@ sap.ui.define([
         async onOpenSortDialog(oEvent) {
             const oButton = oEvent.getSource();
             const oTable = this._getTableFromToolbarControl(oButton);
-            
+
             if (!oTable) {
                 MessageToast.show(this._getText("msgTableNotFound"));
                 return;
             }
-            
+
             // Determine table type from custom data or parent context
             const sTableType = oButton.data("tableType") || "TM";
-            
+
             // Load fragment on first open, reuse on subsequent
             if (!this._oSortDialog) {
                 this._oSortDialog = await Fragment.load({
@@ -263,25 +263,25 @@ sap.ui.define([
                 });
                 this.getView().addDependent(this._oSortDialog);
             }
-            
+
             // Store reference to current table and type
             this._oSortDialog.data("currentTable", oTable);
             this._oSortDialog.data("tableType", sTableType);
-            
+
             // ── SORT ITEMS ──────────────────────────────────────────
             this._oSortDialog.removeAllSortItems();
-            
+
             const aSortConfig = this._getSortConfig()[sTableType] || this._getSortConfig()["TM"];
-            
+
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             let sCurrentSortKey = null;
             let bCurrentDescending = true;
-            
+
             if (oBinding && oBinding.aSorters && oBinding.aSorters.length > 0) {
                 sCurrentSortKey = oBinding.aSorters[0].sPath;
                 bCurrentDescending = oBinding.aSorters[0].bDescending;
             }
-            
+
             aSortConfig.forEach((oConfig, index) => {
                 const oItem = new ViewSettingsItem({
                     key: oConfig.key,
@@ -290,9 +290,9 @@ sap.ui.define([
                 });
                 this._oSortDialog.addSortItem(oItem);
             });
-            
+
             this._oSortDialog.setSortDescending(sCurrentSortKey ? bCurrentDescending : true);
-            
+
             // ── TECHNICIAN FILTER ITEMS (dynamic per table) ─────────
             // Remove old technician group and rebuild from current binding data
             const aExistingFilterItems = this._oSortDialog.getFilterItems();
@@ -300,16 +300,16 @@ sap.ui.define([
             if (oOldTechGroup) {
                 this._oSortDialog.removeFilterItem(oOldTechGroup);
             }
-            
+
             // Collect unique technician names from all (unfiltered) binding contexts
             const aAllContexts = oBinding ? oBinding.getContexts(0, oBinding.getLength()) : [];
             const aAllData = aAllContexts.map(ctx => ctx.getObject());
-            
+
             // Also read directly from model to get unfiltered technicians
             const oModel = this.getView().getModel("view");
             const sActivityPath = this._getActivityPathFromTable(oTable);
             let aTechnicianNames = [];
-            
+
             if (sActivityPath) {
                 const aReports = oModel.getProperty(sActivityPath + "/tmReports") || [];
                 const oNames = {};
@@ -333,7 +333,7 @@ sap.ui.define([
                 });
                 aTechnicianNames.sort();
             }
-            
+
             if (aTechnicianNames.length > 0) {
                 const { ViewSettingsFilterItem } = sap.m;
                 const oTechGroup = new ViewSettingsFilterItem({
@@ -341,11 +341,11 @@ sap.ui.define([
                     text: this._getText("filterByTechnician"),
                     multiSelect: true
                 });
-                
+
                 // Restore previously active technician filter keys for this table
                 const oActiveFilters = oTable.data("activeFilters") || {};
                 const aActiveTechKeys = oActiveFilters.technicianKeys || [];
-                
+
                 aTechnicianNames.forEach(sName => {
                     oTechGroup.addItem(new ViewSettingsItem({
                         key: sName,
@@ -353,10 +353,10 @@ sap.ui.define([
                         selected: aActiveTechKeys.includes(sName)
                     }));
                 });
-                
+
                 this._oSortDialog.addFilterItem(oTechGroup);
             }
-            
+
             // Restore status filter selections for this table
             const oActiveFilters = oTable.data("activeFilters") || {};
             const aActiveStatusKeys = oActiveFilters.statusKeys || [];
@@ -366,7 +366,7 @@ sap.ui.define([
                     oItem.setSelected(aActiveStatusKeys.includes(oItem.getKey()));
                 });
             }
-            
+
             this._oSortDialog.open();
         },
 
@@ -378,24 +378,24 @@ sap.ui.define([
             const oSortItem = oEvent.getParameter("sortItem");
             const bDescending = oEvent.getParameter("sortDescending");
             const aFilterItems = oEvent.getParameter("filterItems") || [];
-            
+
             const oTable = this._oSortDialog.data("currentTable");
             const sTableType = this._oSortDialog.data("tableType");
             if (!oTable) return;
-            
+
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             // ── APPLY SORT ───────────────────────────────────────────
             if (oSortItem) {
                 const oSorter = new Sorter(oSortItem.getKey(), bDescending);
                 oBinding.sort(oSorter);
             }
-            
+
             // ── COLLECT & STORE FILTER SELECTIONS ───────────────────
             const aStatusKeys = [];
             const aTechnicianKeys = [];
-            
+
             aFilterItems.forEach(oItem => {
                 const sGroupKey = oItem.getParent ? oItem.getParent().getKey() : null;
                 if (sGroupKey === "status") {
@@ -404,13 +404,13 @@ sap.ui.define([
                     aTechnicianKeys.push(oItem.getKey());
                 }
             });
-            
+
             // Persist active filter state on the table element
             oTable.data("activeFilters", { statusKeys: aStatusKeys, technicianKeys: aTechnicianKeys });
-            
+
             // ── APPLY FILTERS ────────────────────────────────────────
             this._applyTableFilters(oTable, sTableType);
-            
+
             // ── FEEDBACK ─────────────────────────────────────────────
             const iFilterCount = aStatusKeys.length + aTechnicianKeys.length;
             if (oSortItem && iFilterCount > 0) {
@@ -438,28 +438,28 @@ sap.ui.define([
         onTMSortDialogReset(oEvent) {
             const oTable = this._oSortDialog.data("currentTable");
             const sTableType = this._oSortDialog.data("tableType");
-            
+
             if (!oTable) return;
-            
+
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             // Reset sort to default (first field, descending)
             const aSortConfig = this._getSortConfig()[sTableType] || this._getSortConfig()["TM"];
             const oSorter = new Sorter(aSortConfig[0].key, true);
             oBinding.sort(oSorter);
-            
+
             const aSortItems = this._oSortDialog.getSortItems();
             aSortItems.forEach((oItem, index) => oItem.setSelected(index === 0));
             this._oSortDialog.setSortDescending(true);
-            
+
             // Clear stored filter state and re-apply (only base type filters remain)
             oTable.data("activeFilters", { statusKeys: [], technicianKeys: [] });
             if (sTableType === "TM") {
                 oTable.data("typeSubFilter", "ALL");
             }
             this._applyTableFilters(oTable, sTableType);
-            
+
             MessageToast.show(this._getText("msgSortFilterReset"));
         },
 
@@ -470,17 +470,17 @@ sap.ui.define([
         onTMSortChange(oEvent) {
             const sKey = oEvent.getParameter("selectedItem").getKey();
             const oSelect = oEvent.getSource();
-            
+
             const oTable = this._getTableFromToolbarControl(oSelect);
             if (!oTable || !oTable.getBinding) return;
-            
+
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             // Parse key: "fieldName-direction"
             const [sPath, sDirection] = sKey.split("-");
             const bDescending = sDirection === "desc";
-            
+
             // Create sorter
             const oSorter = new Sorter(sPath, bDescending);
             oBinding.sort(oSorter);
@@ -500,9 +500,9 @@ sap.ui.define([
         _applyTableFilters(oTable, sTableType) {
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             const aFilters = [];
-            
+
             // For TM table, the SegmentedButton sub-filter takes priority over base type filters.
             // When a specific sub-type (Time Effort / Material) is selected, use that EQ filter alone —
             // this matches original behaviour and avoids conflicting AND combinations in UI5 JSONModel.
@@ -521,11 +521,11 @@ sap.ui.define([
                 // Expense / Mileage tables always use their base type filter
                 aFilters.push(...this._getBaseTypeFilters(sTableType));
             }
-            
+
             // User filters from ViewSettingsDialog (status & technician) — always AND'd on top
             const oActiveFilters = oTable.data("activeFilters") || {};
             aFilters.push(...this._buildUserFilters(oActiveFilters));
-            
+
             oBinding.filter(aFilters);
         },
 
@@ -571,10 +571,10 @@ sap.ui.define([
          */
         _buildUserFilters(oActiveFilters) {
             const aResult = [];
-            
+
             const aStatusKeys     = oActiveFilters.statusKeys     || [];
             const aTechnicianKeys = oActiveFilters.technicianKeys || [];
-            
+
             if (aStatusKeys.length > 0) {
                 const aStatusFilters = aStatusKeys.map(sKey =>
                     new Filter("decisionStatus", FilterOperator.EQ, sKey)
@@ -585,7 +585,7 @@ sap.ui.define([
                     : new Filter({ filters: aStatusFilters, and: false })
                 );
             }
-            
+
             if (aTechnicianKeys.length > 0) {
                 const aTechFilters = aTechnicianKeys.map(sName =>
                     new Filter("createPersonDisplayText", FilterOperator.EQ, sName)
@@ -596,7 +596,7 @@ sap.ui.define([
                     : new Filter({ filters: aTechFilters, and: false })
                 );
             }
-            
+
             return aResult;
         },
 
@@ -631,23 +631,23 @@ sap.ui.define([
          */
         onEditSelectedTM(oEvent) {
             const oButton = oEvent.getSource();
-            
+
             const oTable = this._getTableFromToolbarControl(oButton);
             if (!oTable) return;
-            
+
             const oModel = this.getView().getModel("view");
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             // Get all contexts from binding and find selected ones
             const aContexts = oBinding.getContexts();
             let editCount = 0;
-            
+
             aContexts.forEach(oContext => {
                 const oData = oContext.getObject();
                 if (oData.selected) {
                     const sPath = oContext.getPath();
-                    
+
                     // Store original values for cancel functionality
                     oModel.setProperty(sPath + "/originalValues", {
                         duration: oData.duration,
@@ -664,25 +664,25 @@ sap.ui.define([
                         internalAmountValue: oData.internalAmountValue,
                         entryDateFormatted: oData.entryDateFormatted
                     });
-                    
+
                     oModel.setProperty(sPath + "/editMode", true);
                     oModel.setProperty(sPath + "/selected", false);
                     editCount++;
                 }
             });
-            
+
             if (editCount === 0) {
                 MessageToast.show(this._getText("msgSelectEntriesToEdit"));
                 return;
             }
-            
+
             // Set activity-level edit mode flag based on table type
             const sActivityPath = this._getActivityPathFromToolbarControl(oButton);
             const sEditModeProp = this._getEditModeProperty(oTable);
             if (sActivityPath) {
                 oModel.setProperty(sActivityPath + "/" + sEditModeProp, true);
             }
-            
+
             MessageToast.show(this._getText("msgEntriesInEditMode", [editCount]));
         },
 
@@ -695,22 +695,22 @@ sap.ui.define([
          */
         onEndEditTM(oEvent) {
             const oButton = oEvent.getSource();
-            
+
             const oTable = this._getTableFromToolbarControl(oButton);
             if (!oTable) return;
-            
+
             const oModel = this.getView().getModel("view");
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             const aContexts = oBinding.getContexts();
             let cancelCount = 0;
-            
+
             aContexts.forEach(oContext => {
                 const oData = oContext.getObject();
                 if (oData.editMode) {
                     const sPath = oContext.getPath();
-                    
+
                     // Restore original values
                     const originalValues = oData.originalValues;
                     if (originalValues) {
@@ -728,19 +728,19 @@ sap.ui.define([
                         oModel.setProperty(sPath + "/internalAmountValue", originalValues.internalAmountValue);
                         oModel.setProperty(sPath + "/entryDateFormatted", originalValues.entryDateFormatted);
                     }
-                    
+
                     oModel.setProperty(sPath + "/editMode", false);
                     cancelCount++;
                 }
             });
-            
+
             // Clear activity-level edit mode based on table type
             const sActivityPath = this._getActivityPathFromToolbarControl(oButton);
             const sEditModeProp = this._getEditModeProperty(oTable);
             if (sActivityPath) {
                 oModel.setProperty(sActivityPath + "/" + sEditModeProp, false);
             }
-            
+
             if (cancelCount > 0) {
                 MessageToast.show(this._getText("msgEditsCancelled", [cancelCount]));
             }
@@ -755,17 +755,17 @@ sap.ui.define([
          */
         onSaveAllTM(oEvent) {
             const oButton = oEvent.getSource();
-            
+
             const oTable = this._getTableFromToolbarControl(oButton);
             if (!oTable) return;
-            
+
             const oModel = this.getView().getModel("view");
             const oBinding = oTable.getBinding("rows") || oTable.getBinding("items");
             if (!oBinding) return;
-            
+
             const aContexts = oBinding.getContexts();
             const aEditedReports = [];
-            
+
             aContexts.forEach(oContext => {
                 const oData = oContext.getObject();
                 if (oData.editMode) {
@@ -775,12 +775,12 @@ sap.ui.define([
                     });
                 }
             });
-            
+
             if (aEditedReports.length === 0) {
                 MessageToast.show(this._getText("msgNoEntriesInEditMode"));
                 return;
             }
-            
+
             // Validate no future dates before showing confirmation
             const aMapped = aEditedReports.map(r => ({
                 entryDate: r.entryDateFormatted,
@@ -790,11 +790,40 @@ sap.ui.define([
             if (this._validateNoFutureDates(aMapped, (entry, index) => {
                 return `${this._getText("msgEntryNumber")} ${index + 1} (${entry.type}${entry._desc ? " - " + entry._desc : ""})`;
             })) return;
-            
+
+            // Validate durations on edited TIME EFFORT rows.
+            //
+            // Same rule as the create dialog: a duration that would be sent as 0
+            // minutes is rejected by FSM with an opaque CA-09 ("Could not
+            // deserialize ... TimeEffortDTO_V17"), so it is caught here instead.
+            // Editing a duration down to 0 in the table is the way to hit it.
+            //
+            // _toDurationMinutes and _validateNoFutureDates both live in
+            // TMSaveMixin; every mixin is assigned onto the same controller, so
+            // they are reachable through `this` - same pattern as the future-date
+            // check directly above.
+            const aZeroDuration = [];
+            aEditedReports.forEach((report, index) => {
+                if (report.type !== "Time Effort") return;
+                if (this._toDurationMinutes(report.durationHrs) > 0) return;
+
+                const desc = report.taskDisplayText || report.taskCode || "";
+                aZeroDuration.push(
+                    `${this._getText("msgEntryNumber")} ${index + 1}${desc ? " (" + desc + ")" : ""}`
+                );
+            });
+
+            if (aZeroDuration.length > 0) {
+                MessageBox.warning(
+                    `${this._getText("msgDurationRequired")}\n\n${aZeroDuration.join('\n')}`
+                );
+                return;
+            }
+
             // Get activity path and edit mode property for later
             const sActivityPath = this._getActivityPathFromToolbarControl(oButton);
             const sEditModeProp = this._getEditModeProperty(oTable);
-            
+
             // Build preview with user-friendly descriptions
             const lines = [];
             aEditedReports.forEach((report, i) => {
@@ -818,7 +847,7 @@ sap.ui.define([
                 }
                 lines.push(`${i + 1}. ${report.type}: ${description}`);
             });
-            
+
             MessageBox.confirm(
                 this._getText("msgConfirmSaveEntries", [aEditedReports.length, lines.join('\n')]),
                 {
@@ -839,10 +868,10 @@ sap.ui.define([
         async _executeSaveAllTM(oModel, aEditedReports, sActivityPath, sEditModeProp) {
             try {
                 sap.ui.core.BusyIndicator.show(0);
-                
+
                 // Build batch entries array
                 const batchEntries = [];
-                
+
                 for (const report of aEditedReports) {
                     let type, payload;
 
@@ -860,12 +889,24 @@ sap.ui.define([
                             type = 'TimeEffort';
                             // durationHrs is what the StepInput binds/edits — it is the source of truth.
                             // (report.durationMinutes is the stale original and must NOT take precedence.)
-                            const durationMinutes = Math.round((report.durationHrs || 0) * 60);
+                            // _toDurationMinutes is the same helper onSaveAllTM validated with, so what
+                            // passed validation is exactly what is sent. It also tolerates a decimal
+                            // comma ("0,50"), which the old `(report.durationHrs || 0) * 60` turned
+                            // into NaN and shipped to FSM as a malformed payload.
+                            const durationMinutes = this._toDurationMinutes(report.durationHrs);
                             // [VERIFY] Confirm StepInput's edited value propagated to the model row.
                             // If durationHrs here != the value typed in the StepInput, aEditedReports is
                             // reading a detached node and two-way binding is not writing back.
                             console.log("[SaveAll/TimeEffort] id=%s durationHrs=%s -> durationMinutes=%s (stale durationMinutes=%s)",
                                 report.id, report.durationHrs, durationMinutes, report.durationMinutes);
+
+                            // Belt and braces: onSaveAllTM blocks these, but a zero duration is
+                            // rejected by FSM with an opaque CA-09, so never let one through.
+                            if (durationMinutes <= 0) {
+                                console.warn("TMTableMixin: skipping edited time entry with zero duration", report.id);
+                                continue;
+                            }
+
                             payload = { ...report.fullData, remarks: report.remarksText || report.remarks };
                             if (payload.startDateTime) {
                                 const startDate = new Date(payload.startDateTime);
@@ -886,7 +927,7 @@ sap.ui.define([
                             console.log("[SaveAll/TimeEffort] id=%s startDateTime=%s endDateTime=%s",
                                 report.id, payload.startDateTime, payload.endDateTime);
                             break;
-                            
+
                         case "Material":
                             type = 'Material';
                             payload = { ...report.fullData, quantity: parseFloat(report.quantity) || 0, remarks: report.remarksText || report.remarks };
@@ -894,7 +935,7 @@ sap.ui.define([
                                 payload.date = entryDate;
                             }
                             break;
-                            
+
                         case "Expense":
                         case "Expense Report":
                             type = 'Expense';
@@ -905,7 +946,7 @@ sap.ui.define([
                                 remarks: report.remarksText || report.remarks
                             };
                             break;
-                            
+
                         case "Mileage":
                             type = 'Mileage';
                             payload = { ...report.fullData, distance: parseFloat(report.distanceValue) || 0, remarks: report.remarksText || report.remarks };
@@ -915,12 +956,12 @@ sap.ui.define([
                                 payload.travelEndDateTime = endDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
                             }
                             break;
-                            
+
                         default:
                             console.warn(`Unknown type: ${report.type}`);
                             continue;
                     }
-                    
+
                     batchEntries.push({
                         type,
                         id: report.id,
@@ -928,12 +969,12 @@ sap.ui.define([
                         _path: report._path // Keep path for UI update
                     });
                 }
-                
+
                 if (batchEntries.length === 0) {
                     MessageToast.show(this._getText("msgNoEntriesToUpdate"));
                     return;
                 }
-                
+
                 // Chunk the batch so no single request exceeds body-size limits.
                 // Sent sequentially; a failed chunk does NOT abort the rest.
                 const CHUNK_SIZE = 50;
@@ -1048,7 +1089,7 @@ sap.ui.define([
                         MessageBox.error(this._getText("msgBatchUpdateFailed") + "\n\n" + detail);
                     }
                 }
-                
+
             } catch (error) {
                 console.error("Error in save all:", error);
                 MessageBox.error(this._getText("msgError", [error.message]));
@@ -1071,10 +1112,10 @@ sap.ui.define([
         onDeleteSelectedTM(oEvent) {
             const oModel = this.getView().getModel("view");
             const aProductGroups = oModel.getProperty("/productGroups") || [];
-            
+
             // Collect all selected entries across all activities
             const aSelectedEntries = [];
-            
+
             aProductGroups.forEach((group, groupIndex) => {
                 (group.activities || []).forEach((activity, activityIndex) => {
                     (activity.tmReports || []).forEach((report, reportIndex) => {
@@ -1091,12 +1132,12 @@ sap.ui.define([
                     });
                 });
             });
-            
+
             if (aSelectedEntries.length === 0) {
                 MessageToast.show(this._getText("msgNoEntriesSelected"));
                 return;
             }
-            
+
             // Show confirmation dialog
             const sMessage = this._getText("msgDeleteConfirm", [aSelectedEntries.length]);
             MessageBox.confirm(sMessage, {
@@ -1120,7 +1161,7 @@ sap.ui.define([
          */
         async _executeDeleteSelectedTM(oModel, aSelectedEntries) {
             sap.ui.core.BusyIndicator.show(0);
-            
+
             try {
                 // Build entries array for batch delete
                 const entries = aSelectedEntries.map(item => {
@@ -1143,14 +1184,14 @@ sap.ui.define([
                         default:
                             apiType = report.type;
                     }
-                    
+
                     return {
                         type: apiType,
                         id: report.id,
                         lastChanged: report.lastChanged
                     };
                 });
-                
+
                 // Guarded fetch helper: returns parsed JSON, or throws a clear error
                 // if the server/proxy returned non-JSON (e.g. HTML 413/502).
                 const postBatchDelete = async (payloadEntries) => {
@@ -1228,13 +1269,13 @@ sap.ui.define([
 
                 if (result.success) {
                     MessageToast.show(this._getText("msgEntriesDeleted", [result.successCount]));
-                    
+
                     // Remove deleted entries from model (in reverse order to maintain indices)
                     const sortedEntries = [...aSelectedEntries].sort((a, b) => {
                         // Sort by path in reverse order so we delete from end first
                         return b.path.localeCompare(a.path);
                     });
-                    
+
                     sortedEntries.forEach(item => {
                         const aReports = oModel.getProperty(item.activityPath + "/tmReports") || [];
                         const reportIndex = aReports.findIndex(r => r.id === item.report.id);
@@ -1243,10 +1284,10 @@ sap.ui.define([
                             oModel.setProperty(item.activityPath + "/tmReports", aReports);
                         }
                     });
-                    
+
                     // Update counts
                     this._updateTMCounts(oModel);
-                    
+
                 } else if (result.successCount > 0) {
                     MessageBox.warning(this._getText("msgPartialDeleteSuccess", [result.successCount, result.errorCount]));
                     // Reload data to get accurate state
@@ -1254,7 +1295,7 @@ sap.ui.define([
                 } else {
                     MessageBox.error(this._getText("msgBatchDeleteFailed"));
                 }
-                
+
             } catch (error) {
                 console.error("Error in delete selected:", error);
                 MessageBox.error(this._getText("msgError", [error.message]));
@@ -1270,29 +1311,29 @@ sap.ui.define([
          */
         _updateTMCounts(oModel) {
             const aProductGroups = oModel.getProperty("/productGroups") || [];
-            
+
             aProductGroups.forEach((group, groupIndex) => {
                 let groupTotal = 0;
-                
+
                 (group.activities || []).forEach((activity, activityIndex) => {
                     const aReports = activity.tmReports || [];
                     const basePath = `/productGroups/${groupIndex}/activities/${activityIndex}`;
-                    
+
                     // Count by type
                     const timeEffortCount = aReports.filter(r => r.type === 'Time Effort').length;
                     const materialCount = aReports.filter(r => r.type === 'Material').length;
                     const expenseCount = aReports.filter(r => r.type === 'Expense').length;
                     const mileageCount = aReports.filter(r => r.type === 'Mileage').length;
-                    
+
                     oModel.setProperty(basePath + "/tmTimeEffortCount", timeEffortCount);
                     oModel.setProperty(basePath + "/tmMaterialCount", materialCount);
                     oModel.setProperty(basePath + "/tmExpenseCount", expenseCount);
                     oModel.setProperty(basePath + "/tmMileageCount", mileageCount);
                     oModel.setProperty(basePath + "/tmReportsCount", aReports.length);
-                    
+
                     groupTotal += aReports.length;
                 });
-                
+
                 // Update product group total
                 oModel.setProperty(`/productGroups/${groupIndex}/tmTotalCount`, groupTotal);
             });

@@ -360,6 +360,72 @@ module.exports = {
     // ========================================
 
     /**
+     * Every Person in the team of a Service Call.
+     *
+     * WHY A JOIN AND NOT TWO QUERIES
+     *   The service call's `team` field is NOT present in the composite-tree
+     *   payload the app already loads, so the team id cannot be read from what we
+     *   have. Rather than fetch the ServiceCall again just to learn its team, the
+     *   join resolves ServiceCall -> team -> TeamTimeFrame -> person in one call.
+     *
+     *   Keyed on ServiceCall.id, not .code: the id is the value the app already
+     *   holds in every context (it is what the composite tree was fetched with),
+     *   it is unambiguous, and it needs no assumption about how codes are
+     *   formatted or whether they are unique.
+     *
+     * TEAM MEMBERSHIP IS TIME-FRAMED
+     *   TeamTimeFrame is one row per person per time frame, so the same person
+     *   comes back several times when they have more than one frame. Rows are
+     *   de-duplicated here; the caller only asks "is this person in the team".
+     *
+     *   validFrom / validTo are deliberately NOT evaluated. Membership is an
+     *   access gate, and a technician whose frame ended yesterday should not lose
+     *   sight of the service order they worked on. If the requirement ever becomes
+     *   "only current members", filter here rather than at the caller.
+     *
+     * @param {string} serviceCallId - ServiceCall UUID
+     * @returns {Promise<string[]>} Person UUIDs, de-duplicated (empty on any problem)
+     */
+    async getServiceCallTeamPersons(serviceCallId) {
+        try {
+            if (!serviceCallId) return [];
+
+            // The id is interpolated into FSQL, so it must be a plain identifier.
+            // FSM ids are 32-char hex; be liberal but reject anything that could
+            // break out of the quoted literal.
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(serviceCallId))) {
+                console.warn(`FSMService.getServiceCallTeamPersons: refusing unsafe service call id '${serviceCallId}'`);
+                return [];
+            }
+
+            // Both DTOs are required - one per entity in the join, semicolon
+            // separated. Result rows are aliased `v` (the TeamTimeFrame side).
+            const query = `SELECT v.person FROM ServiceCall m `
+                + `JOIN TeamTimeFrame v ON v.team = m.team `
+                + `WHERE m.id = '${serviceCallId}'`;
+            const data = await this.makeQueryRequest(query, 'ServiceCall.27;TeamTimeFrame.11');
+
+            if (!data.data || data.data.length === 0) {
+                // Also the normal result when the service call has no team at all -
+                // the join then yields nothing, which the caller reads as
+                // "not a member" and falls through to the assignment check.
+                return [];
+            }
+
+            return [...new Set(
+                data.data.map(row => row.v?.person).filter(Boolean)
+            )];
+
+        } catch (error) {
+            // Never let a lookup failure open the gate: an empty list means
+            // "not a member", and the caller falls back to the assignment check.
+            console.error('FSMService.getServiceCallTeamPersons: query failed:',
+                error.response?.data || error.message);
+            return [];
+        }
+    },
+
+    /**
      * Get all Persons (Technicians), ONE ROW PER HUMAN.
      *
      * WHY THE DE-DUPLICATION
