@@ -1,26 +1,30 @@
 /**
  * ApprovalService.js
- * 
+ *
  * Frontend service for T&M entry approval status management.
  * Handles fetching, caching, and displaying approval decision statuses and remarks.
- * 
+ *
  * Key Features:
  * - Batch fetch approval statuses and decision remarks for multiple T&M entries
  * - Cache statuses to avoid redundant API calls
  * - Convert status codes to display text and UI5 ValueStates
- * 
- * Decision Status Values:
- * - PENDING: Awaiting decision
- * - REVIEW: Requires an additional review (locked, no editing)
- * - APPROVED: Approved
- * - DECLINED: Change requested (editable; displayed as CHANGE)
- * - APPROVED_CLOSED: Approved and closed
- * - DECLINED_CLOSED: Declined/rejected (locked; displayed as DECLINED)
- * - CANCELLED: Cancelled
- * 
+ *
+ * Decision Status Values (FSM code → what the UI shows):
+ * - PENDING          → PENDING          Awaiting decision
+ * - REVIEW           → REVIEW           Requires an additional review (locked, no editing)
+ * - APPROVED         → APPROVED         Approved
+ * - DECLINED         → CHANGE           Change requested (editable)
+ * - APPROVED_CLOSED  → APPROVED_CLOSED  Approved and closed
+ * - DECLINED_CLOSED  → REJECTED         Rejected (locked)
+ * - CANCELLED        → CANCELLED        Cancelled
+ *
+ * The two renamed codes are the only ones the UI relabels. Everything else is
+ * shown as the raw FSM code on purpose — the status badges are codes, not prose,
+ * and are therefore not translated.
+ *
  * API Endpoint Used:
  * - POST /api/get-approval-status
- * 
+ *
  * @file ApprovalService.js
  * @module com/tns/fsm/timematerialext/app/utils/services/ApprovalService
  */
@@ -129,9 +133,21 @@ sap.ui.define([], () => {
         },
 
         /**
-         * Get human-readable display text for decision status.
+         * Get the label the UI shows for a decision status.
+         *
+         * MUST AGREE WITH THE TABLES. `ProductGroups.fragment.xml` does the same
+         * mapping inline (`... === 'DECLINED' ? 'CHANGE' : ... === 'DECLINED_CLOSED'
+         * ? 'REJECTED' : ...`), and the Status Legend dialog lists the same labels.
+         * This used to return 'Declined' for DECLINED_CLOSED and title-case prose
+         * ('Pending', 'Approved') for the rest, so any caller would have contradicted
+         * the badge beside it.
+         *
+         * Only the two renamed codes are translated; everything else passes through
+         * as the raw FSM code, which is what the badges show. Deliberately NOT
+         * i18n-backed for that reason — these are codes, not sentences.
+         *
          * @param {string} status - Decision status code
-         * @returns {string} Human-readable status text
+         * @returns {string} The label shown in the UI for that status
          */
         getStatusDisplayText(status) {
             if (!status) {
@@ -139,13 +155,8 @@ sap.ui.define([], () => {
             }
 
             const statusTexts = {
-                'PENDING': 'Pending',
-                'REVIEW': 'Review',
-                'APPROVED': 'Approved',
-                'DECLINED': 'Change',
-                'APPROVED_CLOSED': 'Approved (Closed)',
-                'DECLINED_CLOSED': 'Declined',
-                'CANCELLED': 'Cancelled'
+                'DECLINED': 'CHANGE',
+                'DECLINED_CLOSED': 'REJECTED'
             };
 
             return statusTexts[status] || status;

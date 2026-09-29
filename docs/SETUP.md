@@ -41,7 +41,7 @@ won't complete cleanly.
       paste it into FSM Admin (see Step 4)
 - [ ] **FSM Admin access** (yours or coordination with a customer admin) to
       update the Web Container Authentication Key field and the URL field
-- [ ] **Confirmation that destination `FSM_S4E` exists** at the subaccount level,
+- [ ] **Confirmation that destination `FSM_OAUTH_CONNECT` exists** at the subaccount level,
       with valid OAuth credentials to FSM (see Step 3)
 
 ### Tools required
@@ -106,23 +106,23 @@ nvm use 18
 
 ## Step 3: Verify or create the BTP destination
 
-The app uses a destination called `FSM_S4E` to authenticate outbound calls to
+The app uses a destination called `FSM_OAUTH_CONNECT` to authenticate outbound calls to
 FSM. This must be configured in BTP Cockpit.
 
 In a browser, log in to BTP Cockpit. Navigate to:
 
 **Subaccount → Connectivity → Destinations**
 
-Look for `FSM_S4E`. If it exists with valid OAuth credentials and the additional
+Look for `FSM_OAUTH_CONNECT`. If it exists with valid OAuth credentials and the additional
 properties below, skip to Step 4.
 
-### If FSM_S4E does NOT exist or needs to be recreated
+### If FSM_OAUTH_CONNECT does NOT exist or needs to be recreated
 
 Click "Create Destination" and configure:
 
 | Property | Value |
 |---|---|
-| Name | `FSM_S4E` |
+| Name | `FSM_OAUTH_CONNECT` |
 | Type | `HTTP` |
 | URL | `https://de.fsm.cloud.sap` (or your region's FSM URL) |
 | Proxy Type | `Internet` |
@@ -227,7 +227,7 @@ cf service fsm-timematerialext-destination-dev
 # Should show: status: create succeeded
 ```
 
-This service binding will give the app access to the `FSM_S4E` destination
+This service binding will give the app access to the `FSM_OAUTH_CONNECT` destination
 configured at the subaccount level (Step 3).
 
 ## Step 7: Build and push the app

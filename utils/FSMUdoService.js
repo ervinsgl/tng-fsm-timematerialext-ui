@@ -572,17 +572,33 @@ module.exports = {
 
         const result = { udoName: udoMetaName, definition: definition, records: records };
 
-        // Narrow to the one person's record when asked.
+        // Narrow to the one person's record.
+        //
+        // FAIL CLOSED ON AN UNKNOWN CALLER
+        //   An empty identity list used to mean "no filter", which returned
+        //   EVERY user's settings record. The dialog then took records[0] and
+        //   presented a stranger's stored values as the logged-in user's own -
+        //   silently, with no error. A caller that cannot say who it is must get
+        //   nothing back, not everything.
+        //
+        //   This is reachable in practice: a Person with no externalId yields an
+        //   empty identity list while the org level still resolves fine.
         const idList = normalizePersonExternalIds(personExternalIds);
-        if (idList.length > 0) {
-            // One candidate externalId per identity - a record saved under the
-            // EMPLOYEE externalId is still this person's record.
-            const derivedExternalIds = definition?.id
-                ? idList.map(externalId => `${definition.id}_${externalId}`)
-                : [];
-            const own = this.findUserSettingRecordForPerson(idList, derivedExternalIds, result);
-            result.records = own ? [own] : [];
+
+        if (idList.length === 0) {
+            console.warn(`FSMService: getUserSettings called with no person identity - `
+                + `returning no records for '${udoMetaName}' rather than everyone's.`);
+            result.records = [];
+            return result;
         }
+
+        // One candidate externalId per identity - a record saved under the
+        // EMPLOYEE externalId is still this person's record.
+        const derivedExternalIds = definition?.id
+            ? idList.map(externalId => `${definition.id}_${externalId}`)
+            : [];
+        const own = this.findUserSettingRecordForPerson(idList, derivedExternalIds, result);
+        result.records = own ? [own] : [];
 
         return result;
     },

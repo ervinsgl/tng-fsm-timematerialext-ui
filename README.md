@@ -838,7 +838,7 @@ The application supports **multiple deployment contexts**:
                                │ OAuth Token
                                ▼
                       ┌─────────────────┐
-                      │ BTP Destination │  (FSM_S4E destination)
+                      │ BTP Destination │  (FSM_OAUTH_CONNECT destination)
                       │    Service      │
                       └────────┬────────┘
                                │ Authenticated Request
@@ -1008,9 +1008,9 @@ bound in XML views.
 
 For full details on the inbound authentication model, see [docs/SECURITY.md](docs/SECURITY.md).
 
-### Destination Configuration (FSM_S4E):
+### Destination Configuration (FSM_OAUTH_CONNECT):
 
-The destination `FSM_S4E` must be configured in BTP Cockpit with:
+The destination `FSM_OAUTH_CONNECT` must be configured in BTP Cockpit with:
 
 | Property | Description |
 |----------|-------------|
@@ -1097,9 +1097,9 @@ With both lists empty, every Service Product ID routes to Time & Material.
 
 ### 3. Configure BTP Destination
 
-Create a destination named **FSM_S4E** in SAP BTP Cockpit:
+Create a destination named **FSM_OAUTH_CONNECT** in SAP BTP Cockpit:
 ```
-Name: FSM_S4E
+Name: FSM_OAUTH_CONNECT
 Type: HTTP
 URL: https://de.fsm.cloud.sap
 Authentication: OAuth2ClientCredentials
@@ -1283,39 +1283,6 @@ After Stages 1 and 2 resolve, the frontend POSTs the JWT from Stage 1 (`shellCon
 4. Issues a session token, returned in the JSON response body
 
 The frontend stores the session token in memory (`window.__fsmSessionToken`) and the global fetch wrapper attaches it as `Authorization: Bearer <token>` on every subsequent `/api/v1/*` call. This is necessary because the FSM Web UI iframe runs in a third-party context where browsers refuse to store cookies — see [docs/SECURITY.md](docs/SECURITY.md) for the full rationale.
-
----
-
-## 🧪 Standalone / Development Mode
-
-For local UI testing without an FSM session, URL parameters can drive the initial context selection:
-
-```
-# Open with specific Activity
-https://com.tns.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com?activityId=ABC123
-
-# Open with specific Service Call
-https://com.tns.fsm.timematerialext.app-xxx.cfapps.eu10.hana.ondemand.com?serviceCallId=XYZ789
-```
-
-> **Important — current limitation:** With strict authentication enabled on `/api/v1/*`, standalone mode loads the page but cannot fetch any data. All API calls return HTTP 401 because no auth path was established (the Mobile flow needs the Authentication Key POST; the Web UI flow needs the Shell SDK's JWT). The page renders with empty caches and broken data.
-> 
-> Standalone mode is therefore now a **page-load-only** development convenience. It's useful for iterating on pure-frontend UI work (CSS, layout, view structure) but not for any workflow that depends on FSM data. For full end-to-end testing, launch from FSM Mobile or FSM Web UI.
-
-### Local Development
-```bash
-npm start              # Start Express server (backend + frontend) on port 3000
-npm run start:dev      # Start Fiori tools dev server (frontend only, no backend API)
-```
-
-> **Local startup requires `FSM_WEBCONTAINER_AUTH_KEY`.** The Express server (`npm start`) refuses to start if this environment variable is not set, the same as on Cloud Foundry. For local dev, export it in your shell first:
-> 
-> ```bash
-> export FSM_WEBCONTAINER_AUTH_KEY='<any-32-char-value-for-local-use>'
-> npm start
-> ```
-> 
-> The `npm run start:dev` Fiori dev server doesn't start the backend, so it doesn't need the env var — but `/api/v1/*` calls won't work in that mode either.
 
 ---
 
@@ -1937,10 +1904,6 @@ FSMJwtValidator: using JWKS endpoint https://de.fsm.cloud.sap/...
 - Eleven mixins, including `TMUserSettingMixin` and the dormant `TMTypeConfigurationMixin`
 
 ### 📋 Planned:
-- Free-text editing for non-selection user settings (currently read-only in the dialog)
-- Persistent type configuration (database storage instead of file)
-- Persistent session storage (Redis or similar) for horizontal scaling — currently in-memory, requires `instances: 1`
-- Multi-region JWKS configuration (currently defaults to DE; override via `FSM_JWKS_URL`)
 - Offline support
 
 ---

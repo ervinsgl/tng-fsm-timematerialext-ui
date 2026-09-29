@@ -21,7 +21,8 @@
  * through from the backend:
  *   personIds[]         - Person ids
  *   personExternalIds[] - Person externalIds (what a PATCH writes)
- *   persons[]           - { id, externalId, firstName, lastName, displayName }
+ *   personRefIds[]      - Person refIds (same value across every row of one human)
+ *   persons[]           - { id, refId, type, externalId, firstName, lastName, displayName }
  *   personDisplayName   - "firstName lastName" of the first identity (what the
  *                         User Settings table displays)
  * These are returned on BOTH the found and not-found paths, because the person
@@ -241,6 +242,16 @@ sap.ui.define([], () => {
             return {
                 personIds: userOrgData.personIds || [],
                 personExternalIds: userOrgData.personExternalIds || [],
+                // refIds MUST be passed through: the visibility gates match against
+                // every value the user can be referenced by (_getUserIdentityKeys in
+                // DataLoadingMixin), and dropping them here silently emptied that
+                // part of the set - the backend sent them, the model never got them.
+                //
+                // Harmless today, because refId equals the ERPUSER row's id and that
+                // id is already in personIds. It stops being harmless the day SAP's
+                // documented break lands (Person[ERPUSER].id != refId), which is the
+                // exact case refId was carried through for.
+                personRefIds: userOrgData.personRefIds || [],
                 persons: persons,
                 personDisplayName: userOrgData.personDisplayName || persons[0]?.displayName || null
             };

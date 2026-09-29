@@ -16,8 +16,9 @@ sap.ui.define([
     "sap/ui/core/Fragment",
     "sap/m/ViewSettingsItem",
     "com/tns/fsm/timematerialext/app/utils/services/ApprovalService",
-    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService"
-], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem, ApprovalService, DateTimeService) => {
+    "com/tns/fsm/timematerialext/app/utils/helpers/DateTimeService",
+    "com/tns/fsm/timematerialext/app/utils/tm/TMDataService"
+], (MessageToast, MessageBox, Filter, FilterOperator, Sorter, Fragment, ViewSettingsItem, ApprovalService, DateTimeService, TMDataService) => {
     "use strict";
 
     return {
@@ -1067,6 +1068,15 @@ sap.ui.define([
                     }
                 }));
 
+                // Editing can move an entry's status (CHANGE -> PENDING), which changes
+                // the summary colour. Recalculate from each saved row's OWN activity
+                // path - sActivityPath comes from a DOM walk that can be null, and a
+                // save is not guaranteed to be confined to one activity.
+                this._refreshSummariesForActivities(
+                    oModel,
+                    aSavedEntries.map(entry => this._activityPathFromReportPath(entry._path))
+                );
+
                 if (totalError === 0) {
                     MessageToast.show(this._getText("msgEntriesSaved", [totalSuccess]));
                     // Clear activity-level edit mode based on table type
@@ -1288,6 +1298,13 @@ sap.ui.define([
                     // Update counts
                     this._updateTMCounts(oModel);
 
+                    // ...and the summary, which _updateTMCounts does NOT touch.
+                    // Every activity that lost a row, not just one.
+                    this._refreshSummariesForActivities(
+                        oModel,
+                        aSelectedEntries.map(item => item.activityPath)
+                    );
+
                 } else if (result.successCount > 0) {
                     MessageBox.warning(this._getText("msgPartialDeleteSuccess", [result.successCount, result.errorCount]));
                     // Reload data to get accurate state
@@ -1302,6 +1319,54 @@ sap.ui.define([
             } finally {
                 sap.ui.core.BusyIndicator.hide();
             }
+        },
+
+        /**
+         * The activity path that a T&M report path belongs to.
+         *
+         *   /productGroups/0/activities/1/tmReports/3  ->  /productGroups/0/activities/1
+         *
+         * Used instead of the DOM walk in _getActivityPathFromToolbarControl(),
+         * which returns a single path (and can return null). A save or a delete
+         * can span SEVERAL activities, so each row has to name its own.
+         *
+         * @param {string} sReportPath - model path of one tmReports row
+         * @returns {string|null} the activity path, or null if the shape is unexpected
+         * @private
+         */
+        _activityPathFromReportPath(sReportPath) {
+            if (!sReportPath) return null;
+            const m = String(sReportPath).match(/^(\/productGroups\/\d+\/activities\/\d+)\//);
+            return m ? m[1] : null;
+        },
+
+        /**
+         * Recalculate the T&M summary (totals + colour states) of every activity in
+         * a set of paths, from the reports currently in the model.
+         *
+         * WHY THIS EXISTS
+         *   _updateTMCounts() updates COUNTS only. The header summary
+         *   (tmAzHoursReported & co. and their colour states) is written by
+         *   TMDataService, and without this call it keeps the values from the last
+         *   full load: hours that still include just-deleted entries, or a metric
+         *   stuck on RED after the CHANGE entry behind it was edited back to
+         *   PENDING. Both only corrected themselves on the next Refresh.
+         *
+         * PER ACTIVITY, NOT ONCE
+         *   A delete can span several activities and a save can too, so the paths
+         *   are de-duplicated and each one is refreshed. Refreshing only the
+         *   "current" activity leaves the others showing stale numbers - exactly
+         *   the case that is easy to miss when testing with a single activity.
+         *
+         * @param {sap.ui.model.json.JSONModel} oModel - View model
+         * @param {Array<string>} aActivityPaths - activity paths, duplicates allowed
+         * @private
+         */
+        _refreshSummariesForActivities(oModel, aActivityPaths) {
+            const aUnique = [...new Set((aActivityPaths || []).filter(Boolean))];
+            aUnique.forEach(sActivityPath => {
+                TMDataService.refreshActivitySummary(oModel, sActivityPath);
+            });
         },
 
         /**
