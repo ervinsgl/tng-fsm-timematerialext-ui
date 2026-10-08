@@ -536,6 +536,7 @@ different zone — informational, nothing computes against it.
 - [Expected Result](#-expected-result)
 - [How It Works](#-how-it-works)
 - [API Reference](#-api-reference)
+- [UI5 Version & Bootstrap](#-ui5-version--bootstrap)
 - [Troubleshooting](#-troubleshooting)
 - [Application Details](#-application-details)
 - [Current Status](#-current-status)
@@ -751,7 +752,7 @@ This application provides a mobile-optimized interface for viewing and managing 
 - ✅ Direct FSM Data API and Query API integration
 
 **Technology Stack:**
-- **Frontend:** SAP UI5 (Fiori)
+- **Frontend:** SAPUI5 (Fiori), latest version from the SAP CDN (`ui5.sap.com`) — see [UI5 Version & Bootstrap](#-ui5-version--bootstrap)
 - **Backend:** Node.js + Express
 - **Deployment:** SAP Business Technology Platform (Cloud Foundry)
 - **Inbound Authentication:** FSM Authentication Key (Mobile flow) + FSM JWT validation against JWKS (Web UI flow), with HttpOnly cookie or Authorization Bearer token session delivery. See [docs/SECURITY.md](docs/SECURITY.md).
@@ -1669,6 +1670,64 @@ place; nothing else is needed.
 
 ---
 
+## 🧩 UI5 Version & Bootstrap
+
+The app loads the **latest SAPUI5 release** from the SAP CDN. This is the same setup as the FSM Revision Extension, so both extensions behave the same way. In `webapp/index.html`:
+
+```html
+src="https://ui5.sap.com/resources/sap-ui-core.js"
+data-sap-ui-xx-component-preload="off"
+```
+
+### Decision and trade-off
+
+The team chose this setup deliberately: **no UI5 version to maintain**, in exchange for accepting that SAP decides when a new UI5 release is used.
+
+| | |
+|---|---|
+| **Benefit** | No version in the code to update, and no CDN removal deadline after which the app stops loading. |
+| **Accepted risk 1 — cache mix** | After an SAP release, a browser can occasionally hold files from two releases and show a blank panel. Fix: clear cached images and files (see [Troubleshooting](#-troubleshooting)). In FSM Mobile this can mean clearing the FSM app's cache in the device settings. |
+| **Accepted risk 2 — untested releases** | A new SAP release reaches production without our testing. If it changes or removes something the app relies on, a cache clear does not help — a code fix is needed. |
+
+SAP's documentation recommends a versioned URL for productive apps and says not to use the default version in productive or test environments. The alternatives below remain available if the trade-off is re-evaluated.
+
+### Preload
+
+Two different preloads, two different settings:
+
+| Attribute | Setting | Why |
+|-----------|---------|-----|
+| `data-sap-ui-preload` | **Not set** (UI5 default) | UI5 loads one consistent `library-preload.js` per library instead of hundreds of single module files. This keeps the cache-mix risk low. Do **not** add `data-sap-ui-preload=""` again — it was the main cause of the blank-panel incident. |
+| `data-sap-ui-xx-component-preload` | **`"off"`** | Concerns only the app's own files. The app is deployed without a UI5 build, so no `Component-preload.js` exists. Without this attribute UI5 requests it on every load and logs a 404 / MIME-type error before falling back to single files. Remove it only if the pipeline starts generating `Component-preload.js` (`ui5 build`). |
+
+### Why not `resources/sap-ui-core.js` (relative path, as in the BAS template)
+
+The BAS template uses a relative path because it assumes a launchpad, an approuter `ui5` destination, or the local `fiori-tools-proxy` provides UI5. This app is a single **Node.js/Express** module serving `webapp/` statically. There is no approuter and nothing serves `/resources` in production, so a relative path would return 404. `xs-app.json` and `ui5-deploy.yaml` are generator leftovers and are not used in deployment. `ui5.yaml` only affects local `npm run start` in BAS.
+
+### Alternatives (if the trade-off is re-evaluated)
+
+| Option | `src` | Cache mix | Untested SAP releases | Maintenance |
+|--------|-------|-----------|-----------------------|-------------|
+| **Current** | `https://ui5.sap.com/resources/sap-ui-core.js` | Rare | Yes | None |
+| Cache buster *(untested in FSM)* | `https://ui5.sap.com/resources/sap-ui-cachebuster/sap-ui-core.js` | Very rare | Yes | None |
+| Evergreen LTM (SAP recommendation) | `https://ui5.sap.com/<major.minor>/resources/sap-ui-core.js`, e.g. `/1.148/` | None | No | Change the version every 1–2 years. The app stops loading about one year after the version's end of maintenance if not updated. |
+
+For the evergreen option: pick a **Long-term Maintenance** version from the [SAPUI5 version overview](https://ui5.sap.com/versionoverview.html) that is ≥ `minUI5Version` in `webapp/manifest.json`, keep `data-sap-ui-async="true"` and `data-sap-ui-on-init`, and use `?sap-ui-debug=sap/` instead of `?sap-ui-debug=true` for debugging.
+
+### Checking the running version
+
+In DevTools, switch the console context from `top` to the extension iframe and run:
+
+```js
+sap.ui.version
+```
+
+### Note for a future UI5 2.x
+
+The app uses `sap.ui.getCore()` in `webapp/index.html`, `formatter.js`, `TMCreationService.js` and `DataLoadingMixin.js`. This works in all UI5 1.x versions but is removed in UI5 2.x. Because the app always uses the latest release, these calls must be replaced if SAP ever makes a 2.x release the default version — watch SAP UI5 announcements for this.
+
+---
+
 ## 💻 Development Guide
 
 ### Local Development
@@ -1785,6 +1844,8 @@ cf logs com.tns.fsm.timematerialext.app --recent
 | **`CA-09: Could not deserialize ... [TimeEffortDTO_V17]`** | A time entry was sent with a **zero** (or `NaN`) duration | Both save paths now block this before submitting. If it still appears, check `_toDurationMinutes()` — a decimal comma (`"0,50"`) used to become `NaN` via `parseFloat`. The code is mapped to `msgDurationRequired` so the failure list reads sensibly. |
 | `[FUTURE FATAL] ... templateShareable` | An aggregation binding lacks `templateShareable` | Every binding inside another binding's template must declare `templateShareable: false`. |
 | `[FUTURE FATAL] ... 'onInit' must not have a return value` | `onInit` declared as `async` | Make `onInit` synchronous; delegate async work to `_initializeAsync`. |
+| **Blank T&M panel in one browser only**; console shows `Failed to resolve dependencies of 'sap/m/routing/Router.js'` … `Positioning.js` … `Cannot read properties of undefined (reading 'PopoverPlacement')` | The browser cache holds UI5 files from two different releases (each file is cached for up to a week by the default-version CDN). First seen when the app ran with library preload switched off. | Clear cached images and files for the UI5 CDN (cookies are not involved) or use "Empty Cache and Hard Reload". With library preload on (current setup) this is rare, but it can recur after an SAP release. Also check that `data-sap-ui-preload=""` was not re-added. If it happens often, see the alternatives in [UI5 Version & Bootstrap](#-ui5-version--bootstrap). |
+| `Refused to execute script from '.../Component-preload.js' because its MIME type ('text/html') is not executable` + 404 | `data-sap-ui-xx-component-preload="off"` was removed, so UI5 requests a `Component-preload.js` that the build never generates. Express answers with an HTML 404. | Keep `data-sap-ui-xx-component-preload="off"` in `index.html`. Harmless otherwise — UI5 falls back to loading `Component.js` and the app files individually. |
 | Web UI works first time, then 401s after idle | Session token expired (30 min TTL) or container restarted | Refresh the iframe; the Shell SDK re-issues a JWT. |
 
 ### Batch Size & Pagination Handling
@@ -1836,6 +1897,7 @@ FSMJwtValidator: using JWKS endpoint https://de.fsm.cloud.sap/...
 | **Module Name**                    | com.tns.fsm.timematerialext.app                          |
 | **Framework**                      | SAP UI5 (Fiori) + Node.js Express                        |
 | **UI5 Theme**                      | sap_horizon                                              |
+| **UI5 Version**                    | SAPUI5 latest (unversioned `ui5.sap.com` bootstrap), same setup as the FSM Revision Extension |
 | **Deployment Platform**            | SAP Business Technology Platform (Cloud Foundry)         |
 | **Node.js Version**                | 18+                                                      |
 | **Inbound Authentication**         | FSM Authentication Key (Mobile) + FSM JWT validation against JWKS (Web UI) |

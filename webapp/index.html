@@ -11,6 +11,14 @@
         - Loading screen with spinner (auto-hides after UI5 init or 3s timeout)
         - Mobile-optimized viewport
         - Compact density mode
+
+        UI5 version:
+        - SAPUI5 default ("latest") version from ui5.sap.com, same setup as
+          the FSM Revision Extension. No version to maintain; SAP decides
+          when a new UI5 release is used.
+        - If the app is blank in one browser after an SAP release: clear
+          cached images and files (cookies are not involved).
+        - See README -> "UI5 Version & Bootstrap".
     -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -130,10 +138,20 @@
         setTimeout(hideLoadingScreen, 3000);
     </script>
     
-    <!-- UI5 Bootstrap -->
+    <!--
+        UI5 Bootstrap
+        - Unversioned SAPUI5 URL (always the latest release).
+          Optional, untested: SAP cache buster variant
+          https://ui5.sap.com/resources/sap-ui-cachebuster/sap-ui-core.js
+        - UI5 library preload stays at the default (do NOT set
+          data-sap-ui-preload="") - one consistent bundle per library,
+          which keeps the risk of mixed cached releases low.
+        - Component preload is off: the app is deployed without a UI5 build,
+          so no Component-preload.js exists (would 404 on every load).
+    -->
     <script
         id="sap-ui-bootstrap"
-        src="https://openui5.hana.ondemand.com/resources/sap-ui-core.js"
+        src="https://ui5.sap.com/resources/sap-ui-core.js"
         data-sap-ui-theme="sap_horizon"
         data-sap-ui-libs="sap.m"
         data-sap-ui-resource-roots='{"com.tns.fsm.timematerialext.app": "./"}'
@@ -142,7 +160,6 @@
         data-sap-ui-async="true"
         data-sap-ui-frame-options="allow"
         data-sap-ui-xx-component-preload="off"
-        data-sap-ui-preload=""
     ></script>
     
     <!-- UI5 Init Handler -->
