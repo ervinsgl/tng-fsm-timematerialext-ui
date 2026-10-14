@@ -312,12 +312,13 @@
                                                 <HBox alignItems="Center" class="tmQuantityStepper">
                                                     <Button icon="sap-icon://less" press=".onQuantityStepDown" tooltip="-1"/>
                                                     <Input 
-                                                        value="{createTM>quantity}" 
+                                                        value="{path: 'createTM>quantity', formatter: '.formatter.formatQuantityInput'}" 
                                                         type="Text"
                                                         textAlign="Center"
                                                         width="3rem"
                                                         class="sapUiTinyMarginBegin sapUiTinyMarginEnd"
                                                         liveChange=".onQuantityInputLiveChange"
+                                                        change=".onQuantityInputChange"
                                                         valueState="{createTM>quantityState}"
                                                         valueStateText="{i18n>createTMQtyExceeds}"
                                                     />

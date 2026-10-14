@@ -341,7 +341,7 @@
                                                                             <Text text="{i18n>unitHours}" wrapping="false" class="sapUiTinyMarginBegin sapUiTinyMarginEnd tmUnitLabel"/>
                                                                         </HBox>
                                                                         <!-- Qty: show Input for Material, N/A for Time Effort -->
-                                                                        <Input value="{view>quantity}" type="Number" width="4rem" editable="{view>editMode}" visible="{= ${view>type} === 'Material'}"/>
+                                                                        <Input value="{path: 'view>quantity', formatter: '.formatter.formatQuantityInput'}" type="Text" width="4rem" liveChange=".onEditQuantityLiveChange" change=".onEditQuantityChange" editable="{view>editMode}" visible="{= ${view>type} === 'Material'}"/>
                                                                         <Text text="{path: 'view>type', formatter: '.formatter.formatPiecesUnit'}"/>
                                                                         <!-- Date: editable DatePicker in edit mode -->
                                                                         <DatePicker value="{view>entryDateFormatted}" valueFormat="yyyy-MM-dd" displayFormat="dd.MM.yyyy" width="8rem" editable="{view>editMode}" maxDate="{path: 'view>entryDateFormatted', formatter: '.formatter.formatTodayMaxDate'}"/>

@@ -1,19 +1,19 @@
 /**
  * formatter.js
- * 
+ *
  * UI formatting utilities for data binding in XML views.
  * Provides consistent formatting for dates, numbers, and IDs.
- * 
+ *
  * Key Features:
  * - DateTime and Date formatting for display
  * - Numeric value formatting (quantity, amount, distance)
  * - Activity ID formatting for FSM API
  * - JSON formatting for debugging
  * - Service Product type checking (Expense, Mileage, Time & Material)
- * 
+ *
  * Usage in XML Views:
  *   text="{path: 'view>startDateTime', formatter: '.formatter.formatDateTime'}"
- * 
+ *
  * @file formatter.js
  * @module com/tns/fsm/timematerialext/app/model/formatter
  */
@@ -22,6 +22,29 @@ sap.ui.define([
     "sap/ui/core/format/NumberFormat"
 ], (TypeConfigService, NumberFormat) => {
     "use strict";
+
+    /**
+     * Locale-aware material quantity text: 0–2 decimals, no grouping.
+     * de: 1 -> "1", 2.5 -> "2,5", 1.75 -> "1,75"   en: 1.75 -> "1.75"
+     * Module-level (not a method) because XML formatters are called with the
+     * control as `this`, so a sibling method could not be reached reliably.
+     * @param {number|string} qty quantity
+     * @returns {string} localized quantity text
+     */
+    const fnFormatQty = function(qty) {
+        const n = parseFloat(qty);
+        const v = isNaN(n) ? 0 : n;
+        try {
+            const oFmt = NumberFormat.getFloatInstance({
+                minFractionDigits: 0,
+                maxFractionDigits: 2,
+                groupingEnabled: false
+            });
+            return oFmt.format(v);
+        } catch (e) {
+            return String(Math.round(v * 100) / 100);
+        }
+    };
 
     return {
         /**
@@ -110,6 +133,18 @@ sap.ui.define([
         formatQuantity(quantity) {
             if (!quantity) return 0;
             return parseFloat(quantity);
+        },
+
+        /**
+         * Material quantity for the editable quantity inputs (create dialog and
+         * inline edit table), in the user's locale with up to 2 decimals.
+         * e.g. de: 1 -> "1", 2.5 -> "2,5", 1.75 -> "1,75"; en: 1.75 -> "1.75".
+         * Parsing back (comma OR dot accepted) is done in TMMaterialMixin.
+         * @param {number|string} qty quantity from the model
+         * @returns {string} localized quantity text
+         */
+        formatQuantityInput: function(qty) {
+            return fnFormatQty(qty);
         },
 
         /**
@@ -212,18 +247,22 @@ sap.ui.define([
 
         /**
          * Format remaining material quantity text.
+         * The number is shown in the user's locale with up to 2 decimals
+         * (de: "von 2,25 Stk.", en: "of 2.25 pcs"), since material quantities
+         * may now be decimal.
          * @param {number} qty - Remaining quantity
          * @returns {string} Formatted text "of X pcs"
          */
         formatRemainingQty: function(qty) {
+            const sQty = fnFormatQty(qty || 0);
             try {
                 const oComponent = sap.ui.getCore().getComponent("container-com.tns.fsm.timematerialext.app");
                 if (oComponent) {
                     const oBundle = oComponent.getModel("i18n").getResourceBundle();
-                    return oBundle.getText("remainingMaterialQty", [qty || 0]);
+                    return oBundle.getText("remainingMaterialQty", [sQty]);
                 }
             } catch (e) { /* fallback */ }
-            return `of ${qty || 0} pcs`;
+            return `of ${sQty} pcs`;
         },
 
         /**

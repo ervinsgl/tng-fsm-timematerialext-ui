@@ -155,7 +155,10 @@ sap.ui.define([
             });
 
             return {
-                materialQty,
+                // Material quantities can be decimal (max 2 decimals). Summing
+                // binary floats leaves artefacts (e.g. 115.94999999999999), so the
+                // total is rounded to 2 decimals - same as the hours below.
+                materialQty: Math.round((materialQty + Number.EPSILON) * 100) / 100,
                 azHours: this._minutesToHours(minutes.az),
                 fzHours: this._minutesToHours(minutes.fz),
                 wzHours: this._minutesToHours(minutes.wz),
